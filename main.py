@@ -48,7 +48,7 @@ GUILD_OBJECT = discord.Object(id=int(GUILD_ID))
 # Set up logging for debugging purposes
 logging.basicConfig(level=logging.INFO)
 
-
+# Set up the bot client with command prefix and intents
 intents = discord.Intents.default()
 intents.message_content = True
 client = Client(command_prefix='!', intents=intents)
@@ -62,7 +62,7 @@ async def sayHello(interaction: discord.Interaction):
 
 client.run(TOKEN) # type: ignore - get a warning about str but this works
 
-#TODO add a command to have the user specify the gacha game they want to see
+#TODO add a command to have the user specify the gacha game they want to see then run backend code to get the event data
 
 
 # Found a website that has the event data for wuthering waves.
