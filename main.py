@@ -9,6 +9,16 @@ import os
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = os.getenv('GUILD_ID')
+
+# Placeholder for the API URL to get event data
+#TODO
+API_URL = ""
+
+
+# Check if TOKEN is set
+if TOKEN is None:
+    raise ValueError("DISCORD_TOKEN environment variable is not set.")
+# Check if GUILD_ID is set
 if GUILD_ID is None:
     raise ValueError("GUILD_ID environment variable is not set.")
 
@@ -51,6 +61,9 @@ async def sayHello(interaction: discord.Interaction):
     await interaction.response.send_message(f'Hello!')
 
 client.run(TOKEN) # type: ignore - get a warning about str but this works
+
+#TODO add a command to have the user specify the gacha game they want to see
+
 
 # Found a website that has the event data for wuthering waves.
 # It seems the user manually updates the event data.
