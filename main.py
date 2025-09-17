@@ -8,6 +8,9 @@ import os
 # Grab the discord token from the secure file
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+GUILD_ID = os.getenv('GUILD_ID')
+if GUILD_ID is None:
+    raise ValueError("GUILD_ID environment variable is not set.")
 
 # Define client function so that the bot can go online
 class Client(commands.Bot):
@@ -17,14 +20,24 @@ class Client(commands.Bot):
         # Try catch block to handle any errors during command sync
         # This should sync the commands to the specified guild immediately
         try:
-            guild = discord.Object(id=1411942826937421877)
+            # Check if GUILD_ID is set
+            if GUILD_ID is None:
+                raise ValueError("GUILD_ID environment variable is not set.")
+            guild = discord.Object(id=int(GUILD_ID))
             sync = await self.tree.sync(guild=guild)
             print(f'Synced {len(sync)} commands to guild {guild.id}')
-        except Exception as e   :
+        except Exception as e:
             print(f"Error syncing commands: {e}")
             
-#Unique server ID to test my bot commands
-GUILD_ID = discord.Object(id=1411942826937421877)    
+# Unique server ID to test my bot commands
+#Check if GUILD_ID is set
+if GUILD_ID is None:
+    raise ValueError("GUILD_ID environment variable is not set.")
+GUILD_OBJECT = discord.Object(id=int(GUILD_ID))
+
+# Set up logging for debugging purposes
+logging.basicConfig(level=logging.INFO)
+
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -33,7 +46,7 @@ client = Client(command_prefix='!', intents=intents)
 # Sample code to test the bot with commands
 # Important to specify the guild for faster testing, as testing it globably can take up to an hour to update
 # If you want to make the command global, just remove the guild=GUILD_ID part
-@client.tree.command(name="hello", description="Says hello!", guild=GUILD_ID)
+@client.tree.command(name="hello", description="Says hello!", guild=GUILD_OBJECT)
 async def sayHello(interaction: discord.Interaction):
     await interaction.response.send_message(f'Hello!')
 
