@@ -5,6 +5,7 @@ import logging
 from dotenv import load_dotenv
 import os
 
+
 # Grab the discord token from the secure file
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')

@@ -1,5 +1,6 @@
 discord.py
 python-dotenv
+psycopg2-binary
 
 # Install requirements with: pip install -r .\requirements.tx
 # Python version 3.13 is being used for this project
