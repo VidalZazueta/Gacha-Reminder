@@ -64,10 +64,10 @@ async def sayHello(interaction: discord.Interaction):
     await interaction.response.send_message(f'Hello!')
     
     
-@client.tree.command(name="events", description="Get the current events for the gacha game Wuthering Waves", guild=GUILD_OBJECT )
+@client.tree.command(name="events", description="Get the current events for Wuthering Waves", guild=GUILD_OBJECT)
 async def list_events(interaction: discord.Interaction):
+    
     try:
-        
         await interaction.response.defer()
         
         wiki = WikiAPI(API_URL=API_URL)
@@ -77,24 +77,35 @@ async def list_events(interaction: discord.Interaction):
             await interaction.followup.send("No ongoing events right now.")
             return
         
-        event_list = [f"- {event['title']} ({event['date_range_str']})" for event in ongoing_events]
-        formatted_list = "\n".join(event_list)
-        
+        # Create a simple embed
         embed = discord.Embed(
-            title="📅 Ongoing Wuthering Waves Events",
-            description=formatted_list,
-            color=discord.Color.green()
+            title="Current Wuthering Waves Events",
+            color=discord.Color.blue(),
         )
-        embed.set_footer(text="Data from Wuthering Waves Wiki (CC-BY-SA)")
+        
+        # Format events simply
+        event_list = []
+        for event in ongoing_events:
+            name = event['title']
+            time_left = event['time_remaining'] 
+            dates = event['date_range_str']
+            
+            event_list.append(f"**{name}**\nTime left: {time_left} | {dates}")
+        
+        # Add events to embed
+        embed.description = "\n\n".join(event_list)
+        embed.set_footer(text=f"Found {len(ongoing_events)} active events • Data from Wuthering Waves Wiki")
+        
         await interaction.followup.send(embed=embed)
         
     except Exception as e:
-        print(f"Error in listing events command: {e}")
-
+        print(f"Error in events command: {e}")
+        error_msg = f"Error fetching events: {str(e)[:100]}..."  # Show first 100 chars of error
+        
         if interaction.response.is_done():
-            await interaction.followup.send("Error fetching events. Try again later")
-        else: 
-            await interaction.response.send_message("Error fetching events. Try again")
+            await interaction.followup.send(f"Error: {error_msg}")
+        else:
+            await interaction.response.send_message(f"Error: {error_msg}")
 
 client.run(TOKEN) # type: ignore - get a warning about str but this works
 
