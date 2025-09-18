@@ -5,9 +5,6 @@ A discord bot to remind users about the current events in their favorite gacha g
 ## Goal
 The goal of this project is to create a discord bot to give users consistent reminders about the current events in their favorite gacha games. Showing users what events are available and what events will end soon will help them manage their time and prioritize the right game.
 
-## Installation
-Currently, this is a work in progress but if there is a bigger demand I will allow other users to install the code base to configure their own version of this bot
-
 ## Technologies Used
 Python  
 Visual Studio Code or any text editor  
@@ -18,7 +15,4 @@ discord.py
 python-dotenv  
 psycog2-binary  
 
-
-
-## Contributing 
 
