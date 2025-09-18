@@ -9,9 +9,15 @@ The goal of this project is to create a discord bot to give users consistent rem
 Currently, this is a work in progress but if there is a bigger demand I will allow other users to install the code base to configure their own version of this bot
 
 ## Technologies Used
-Python,
-Visual Studio Code or any text editor,
+Python  
+Visual Studio Code or any text editor  
 Postgresql (planned)
+
+## Packages
+discord.py  
+python-dotenv  
+psycog2-binary  
+
 
 
 ## Contributing 
