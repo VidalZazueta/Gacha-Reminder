@@ -15,4 +15,11 @@ discord.py
 python-dotenv  
 psycog2-binary  
 
+## Planned Features
+Filtering by event type (In-Game vs Web events)  
+Showing upcoming events (starting soon)  
+Adding timezone handling for the UTC+8 offsets  
+Sorting events by end date to show which ones are ending soonest  
+
+
 

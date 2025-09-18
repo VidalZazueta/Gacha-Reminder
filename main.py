@@ -4,16 +4,18 @@ from discord import app_commands
 import logging
 from dotenv import load_dotenv
 import os
+from wiki_api import WikiAPI
+import requests
+
+
+API_URL = "https://wutheringwaves.fandom.com/api.php"
+
 
 
 # Grab the discord token from the secure file
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = os.getenv('GUILD_ID')
-
-# Placeholder for the API URL to get event data
-#TODO
-API_URL = ""
 
 
 # Check if TOKEN is set
@@ -60,6 +62,39 @@ client = Client(command_prefix='!', intents=intents)
 @client.tree.command(name="hello", description="Says hello!", guild=GUILD_OBJECT)
 async def sayHello(interaction: discord.Interaction):
     await interaction.response.send_message(f'Hello!')
+    
+    
+@client.tree.command(name="events", description="Get the current events for the gacha game Wuthering Waves", guild=GUILD_OBJECT )
+async def list_events(interaction: discord.Interaction):
+    try:
+        
+        await interaction.response.defer()
+        
+        wiki = WikiAPI(API_URL=API_URL)
+        ongoing_events = wiki.get_ongoing_events()
+        
+        if not ongoing_events:
+            await interaction.followup.send("No ongoing events right now.")
+            return
+        
+        event_list = [f"- {event['title']} ({event['date_range_str']})" for event in ongoing_events]
+        formatted_list = "\n".join(event_list)
+        
+        embed = discord.Embed(
+            title="📅 Ongoing Wuthering Waves Events",
+            description=formatted_list,
+            color=discord.Color.green()
+        )
+        embed.set_footer(text="Data from Wuthering Waves Wiki (CC-BY-SA)")
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Error in listing events command: {e}")
+
+        if interaction.response.is_done():
+            await interaction.followup.send("Error fetching events. Try again later")
+        else: 
+            await interaction.response.send_message("Error fetching events. Try again")
 
 client.run(TOKEN) # type: ignore - get a warning about str but this works
 
