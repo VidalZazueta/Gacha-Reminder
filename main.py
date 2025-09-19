@@ -4,7 +4,7 @@ from discord import app_commands
 import logging
 from dotenv import load_dotenv
 import os
-from wiki_api import WikiAPI
+from wiki_api import get_ongoing_events_fast
 import requests
 
 
@@ -56,22 +56,25 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = Client(command_prefix='!', intents=intents)
 
-# Sample code to test the bot with commands
+#
 # Important to specify the guild for faster testing, as testing it globably can take up to an hour to update
-# If you want to make the command global, just remove the guild=GUILD_ID part
+# If you want to make the command global, just remove the guild=GUILD_ID par
+
+# Sample code to test the bot with commandst
 @client.tree.command(name="hello", description="Says hello!", guild=GUILD_OBJECT)
 async def sayHello(interaction: discord.Interaction):
     await interaction.response.send_message(f'Hello!')
     
-    
+# Slash command to get the events for the game wuthering waves   
 @client.tree.command(name="events", description="Get the current events for Wuthering Waves", guild=GUILD_OBJECT)
 async def list_events(interaction: discord.Interaction):
     
     try:
         await interaction.response.defer()
         
-        wiki = WikiAPI(API_URL=API_URL)
-        ongoing_events = wiki.get_ongoing_events()
+        # Import the optimized version with debug
+        from wiki_api import get_ongoing_events_fast
+        ongoing_events = get_ongoing_events_fast(API_URL, debug=True)  # Enable debug
         
         if not ongoing_events:
             await interaction.followup.send("No ongoing events right now.")
@@ -84,6 +87,7 @@ async def list_events(interaction: discord.Interaction):
         )
         
         # Format events simply
+        # Go through each event and get the info to format to fit into the embed
         event_list = []
         for event in ongoing_events:
             name = event['title']
