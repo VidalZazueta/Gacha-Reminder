@@ -2,6 +2,8 @@ discord.py
 python-dotenv
 psycopg2-binary
 requests
+supabase
+aiohttp
 
 # Install requirements with: pip install -r .\requirements.tx
 # Python version 3.13 is being used for this project
