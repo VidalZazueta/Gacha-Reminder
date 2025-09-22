@@ -1,73 +1,102 @@
-import requests
 import re
 import asyncio
 import aiohttp
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor
-import json
+import time
 
 class OptimizedWikiAPI:
     
     def __init__(self, API_URL: str):
         self.API_URL = API_URL
-        self.session = requests.Session()  # Reuse connections
     
-    def get_category_members_with_content(self, category: str, limit: int = 250) -> List[Dict]:
-        """Get category members with their content in batches to avoid URL limits"""
+    async def get_category_members_async(self, category: str, limit: int = 250) -> List[Dict]:
+        """Highly optimized version with better batching and concurrent requests"""
+        # Longer timeout and connection pooling
+        timeout = aiohttp.ClientTimeout(total=60, connect=10)
+        connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
         
-        # Get all page titles first
-        parameters = {
-            "action": "query",
-            "format": "json",
-            "list": "categorymembers",
-            "cmtitle": f"Category:{category}",
-            "cmlimit": str(limit)
-        }
-        
-        try:
-            response = self.session.get(self.API_URL, params=parameters)
-            response.raise_for_status()
-            data = response.json()
-            members = data.get("query", {}).get("categorymembers", [])
-            
-            print(f"Found {len(members)} total members in category")
-            
-            if not members:
-                return []
-            
-            # Process in batches of 50 to avoid URL length limits
-            batch_size = 50
-            all_results = []
-            
-            for i in range(0, len(members), batch_size):
-                batch = members[i:i + batch_size]
-                titles = "|".join([member["title"] for member in batch])
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            try:
+                step_start = time.time()
                 
-                print(f"Processing batch {i//batch_size + 1}: {len(batch)} pages")
-                
-                content_params = {
+                # Get category members
+                params = {
                     "action": "query",
                     "format": "json",
-                    "prop": "revisions",
-                    "titles": titles,
-                    "rvprop": "content",
-                    "rvslots": "main"
+                    "list": "categorymembers",
+                    "cmtitle": f"Category:{category}",
+                    "cmlimit": str(limit)
                 }
                 
-                content_response = self.session.get(self.API_URL, params=content_params)
+                async with session.get(self.API_URL, params=params) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    members = data.get("query", {}).get("categorymembers", [])
+                
+                step_end = time.time()
+                print(f"[FETCH] Got {len(members)} category members in {round(step_end - step_start, 2)}s")
+                
+                if not members:
+                    return []
+                
+                # More aggressive batching - process multiple batches concurrently
+                batch_size = 20  # Smaller batches for better parallelization
+                all_results = []
+                
+                # Create tasks for all batches
+                batch_tasks = []
+                for i in range(0, len(members), batch_size):
+                    batch = members[i:i + batch_size]
+                    task = self._fetch_batch_content(session, batch)
+                    batch_tasks.append(task)
+                
+                print(f"[FETCH] Created {len(batch_tasks)} batch tasks")
+                
+                # Execute all batches concurrently
+                concurrent_start = time.time()
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                concurrent_end = time.time()
+                
+                print(f"[FETCH] Concurrent batches completed in {round(concurrent_end - concurrent_start, 2)}s")
+                
+                # Combine all results
+                for result in batch_results:
+                    if isinstance(result, list):
+                        all_results.extend(result)
+                    elif isinstance(result, Exception):
+                        print(f"[ERROR] Batch failed: {result}")
+                
+                print(f"[FETCH] Total results with content: {len(all_results)}")
+                return all_results
+                    
+            except Exception as e:
+                print(f"[ERROR] Fatal error in get_category_members_async: {e}")
+                return []
+    
+    async def _fetch_batch_content(self, session: aiohttp.ClientSession, batch: List[Dict]) -> List[Dict]:
+        """Fetch content for a single batch of pages"""
+        try:
+            titles = "|".join([member["title"] for member in batch])
+            
+            content_params = {
+                "action": "query",
+                "format": "json",
+                "prop": "revisions",
+                "titles": titles,
+                "rvprop": "content",
+                "rvslots": "main"
+            }
+            
+            async with session.get(self.API_URL, params=content_params) as content_response:
                 content_response.raise_for_status()
-                content_data = content_response.json()
-                
+                content_data = await content_response.json()
                 pages = content_data.get("query", {}).get("pages", {})
-                print(f"Retrieved content for {len(pages)} pages in this batch")
                 
-                # Combine title info with content for this batch
+                # Process results for this batch
+                batch_results = []
                 for member in batch:
                     title = member["title"]
-                    content_found = False
-                    
-                    # Find matching page content
                     for page_id, page_data in pages.items():
                         if page_data.get("title") == title:
                             content = ""
@@ -77,91 +106,20 @@ class OptimizedWikiAPI:
                                 main_slot = slots.get("main", {})
                                 content = main_slot.get("*", "")
                             
-                            all_results.append({
+                            batch_results.append({
                                 "title": title,
                                 "content": content
                             })
-                            content_found = True
                             break
-                    
-                    if not content_found:
-                        print(f"No content found for: {title}")
-                        # Still add it with empty content for debugging
-                        all_results.append({
-                            "title": title,
-                            "content": ""
-                        })
-            
-            print(f"Total results with content: {len(all_results)}")
-            return all_results
-            
-        except requests.RequestException as e:
-            print(f"Error getting category members with content: {e}")
+                
+                return batch_results
+                
+        except Exception as e:
+            print(f"[ERROR] Batch content fetch failed: {e}")
             return []
     
-    async def get_category_members_async(self, category: str, limit: int = 250) -> List[Dict]:
-        """Async version for even better performance"""
-        
-        async with aiohttp.ClientSession() as session:
-            # Get category members
-            params = {
-                "action": "query",
-                "format": "json",
-                "list": "categorymembers",
-                "cmtitle": f"Category:{category}",
-                "cmlimit": str(limit)
-            }
-            
-            try:
-                async with session.get(self.API_URL, params=params) as response:
-                    data = await response.json()
-                    members = data.get("query", {}).get("categorymembers", [])
-                    
-                    if not members:
-                        return []
-                    
-                    # Batch get content for all pages
-                    titles = "|".join([member["title"] for member in members])
-                    
-                    content_params = {
-                        "action": "query",
-                        "format": "json",
-                        "prop": "revisions",
-                        "titles": titles,
-                        "rvprop": "content",
-                        "rvslots": "main"
-                    }
-                    
-                    async with session.get(self.API_URL, params=content_params) as content_response:
-                        content_data = await content_response.json()
-                        pages = content_data.get("query", {}).get("pages", {})
-                        
-                        # Combine data
-                        result = []
-                        for member in members:
-                            title = member["title"]
-                            for page_id, page_data in pages.items():
-                                if page_data.get("title") == title:
-                                    content = ""
-                                    revisions = page_data.get("revisions", [])
-                                    if revisions:
-                                        slots = revisions[0].get("slots", {})
-                                        main_slot = slots.get("main", {})
-                                        content = main_slot.get("*", "")
-                                    
-                                    result.append({
-                                        "title": title,
-                                        "content": content
-                                    })
-                                    break
-                        
-                        return result
-                        
-            except Exception as e:
-                print(f"Error in async request: {e}")
-                return []
-    
     def parse_datetime_from_wiki_format(self, date_str: str) -> Optional[datetime]:
+        """Parse datetime from various wiki formats"""
         if not date_str or date_str.strip().lower() in ['none', '', 'null', 'n/a']:
             return None
         
@@ -197,7 +155,6 @@ class OptimizedWikiAPI:
     
     def get_time_remaining(self, end_date: datetime) -> str:
         """Calculate time remaining in a readable format"""
-        
         if end_date.year == 2030: 
             return "Permanent"
         
@@ -224,6 +181,7 @@ class OptimizedWikiAPI:
             return f"{minutes}m"
     
     def parse_event_dates(self, text: str, title: str = "") -> Optional[Tuple[datetime, datetime]]:
+        """Parse start and end dates from wiki content"""
         start_match = re.search(r'\|\s*time_start\s*=\s*([^\n|]+)', text)
         end_match = re.search(r'\|\s*time_end\s*=\s*([^\n|]+)', text)
         
@@ -246,34 +204,24 @@ class OptimizedWikiAPI:
         
         return None
     
-    def process_event_fast(self, event_data: Dict, today: datetime, debug: bool = False) -> Optional[Dict]:
-        """Process a single event quickly"""
+    async def process_event_async(self, event_data: Dict, today: datetime, debug: bool = False) -> Optional[Dict]:
+        """Process a single event asynchronously"""
         try:
             title = event_data["title"]
             content = event_data["content"]
             
-            if debug:
-                print(f"Processing: {title}")
-                print(f"Content length: {len(content)}")
-            
             if not content:
                 if debug:
-                    print(f"No content for {title}")
+                    print(f"[PROCESS] No content for {title}")
                 return None
             
             date_info = self.parse_event_dates(content, title)
             if not date_info:
                 if debug:
-                    print(f"No valid dates found for {title}")
-                    # Show some content for debugging
-                    content_preview = content[:200].replace('\n', ' ')
-                    print(f"Content preview: {content_preview}")
+                    print(f"[PROCESS] No valid dates found for {title}")
                 return None
             
             start_date, end_date = date_info
-            
-            if debug:
-                print(f"Dates: {start_date} to {end_date}")
             
             # Check if event is ongoing
             today_aware = today.replace(tzinfo=timezone.utc) if today.tzinfo is None else today
@@ -282,12 +230,12 @@ class OptimizedWikiAPI:
             
             is_ongoing = start_aware.date() <= today_aware.date() <= end_aware.date()
             
-            if debug:
-                print(f"Is ongoing: {is_ongoing} (today: {today_aware.date()})")
-            
             if is_ongoing:
                 clean_name = self.get_clean_event_name(content, title)
                 time_remaining = self.get_time_remaining(end_date)
+                
+                if debug:
+                    print(f"[PROCESS] Found ongoing event: {clean_name}")
                 
                 return {
                     "title": clean_name,
@@ -298,82 +246,62 @@ class OptimizedWikiAPI:
                 }
         except Exception as e:
             if debug:
-                print(f"Error processing event {event_data.get('title', 'unknown')}: {e}")
+                print(f"[ERROR] Error processing event {event_data.get('title', 'unknown')}: {e}")
             
         return None
     
-    def get_ongoing_events_fast(self, today: Optional[datetime] = None, debug: bool = False) -> List[Dict]:
-        """Faster version using batched requests and parallel processing"""
+    async def get_ongoing_events_async(self, today: Optional[datetime] = None, debug: bool = False) -> List[Dict]:
+        """Get all ongoing events asynchronously with detailed timing"""
         if today is None:
             today = datetime.now(timezone.utc)
         
+        total_start = time.time()
         if debug:
-            print(f"Looking for events on date: {today}")
+            print(f"[START] Looking for events on date: {today}")
         
-        # Get all events with their content in batches
-        events_with_content = self.get_category_members_with_content("Events")
+        # Get events with content using async HTTP
+        fetch_start = time.time()
+        events_with_content = await self.get_category_members_async("Events")
+        fetch_end = time.time()
+        
+        if debug:
+            print(f"[FETCH] Retrieved {len(events_with_content)} events in {round(fetch_end - fetch_start, 2)}s")
+        
         if not events_with_content:
             if debug:
-                print("No events with content found")
+                print("[FETCH] No events with content found")
             return []
         
-        if debug:
-            print(f"Processing {len(events_with_content)} events...")
+        # Process all events concurrently
+        process_start = time.time()
+        tasks = [
+            self.process_event_async(event_data, today, debug) 
+            for event_data in events_with_content
+        ]
         
-        # Process events in parallel using ThreadPoolExecutor
-        current_events = []
-        processed_count = 0
+        # Wait for all processing to complete
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        process_end = time.time()
         
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            # Submit all processing tasks
-            futures = [
-                executor.submit(self.process_event_fast, event_data, today, debug) 
-                for event_data in events_with_content
-            ]
-            
-            # Collect results
-            for future in futures:
-                result = future.result()
-                processed_count += 1
-                if result:
-                    current_events.append(result)
-                    if debug:
-                        print(f"Found ongoing event: {result['title']}")
-        
-        if debug:
-            print(f"Processed {processed_count} events, found {len(current_events)} ongoing")
+        # Filter out None results and exceptions
+        current_events = [
+            result for result in results 
+            if result is not None and not isinstance(result, Exception)
+        ]
         
         # Sort by end date
         current_events.sort(key=lambda x: x['end_date'] if x['end_date'].year != 2030 else datetime.max)
         
-        return current_events
-    
-    async def get_ongoing_events_async(self, today: Optional[datetime] = None) -> List[Dict]:
-        """Async version for maximum speed"""
-        if today is None:
-            today = datetime.now(timezone.utc)
+        total_end = time.time()
+        if debug:
+            print(f"[PROCESS] Processed events in {round(process_end - process_start, 2)}s")
+            print(f"[RESULT] Found {len(current_events)} ongoing events")
+            print(f"[TOTAL] Complete operation took {round(total_end - total_start, 2)}s")
         
-        events_with_content = await self.get_category_members_async("Events")
-        if not events_with_content:
-            return []
-        
-        # Process events
-        current_events = []
-        for event_data in events_with_content:
-            result = self.process_event_fast(event_data, today)
-            if result:
-                current_events.append(result)
-        
-        current_events.sort(key=lambda x: x['end_date'] if x['end_date'].year != 2030 else datetime.max)
         return current_events
 
-# Convenience functions
-def get_ongoing_events_fast(API_URL: str, debug: bool = False) -> List[Dict]:
-    """Fast synchronous version"""
+# Convenience function for easy usage
+async def get_ongoing_events_async(API_URL: str, debug: bool = False) -> List[Dict]:
+    """Convenience function - creates instance and calls async method"""
     wiki = OptimizedWikiAPI(API_URL)
-    return wiki.get_ongoing_events_fast(debug=debug)
-
-async def get_ongoing_events_async(API_URL: str) -> List[Dict]:
-    """Async version for maximum performance"""
-    wiki = OptimizedWikiAPI(API_URL)
-    return await wiki.get_ongoing_events_async()
+    return await wiki.get_ongoing_events_async(debug=debug)
