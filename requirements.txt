@@ -1,8 +1,16 @@
+# Discord bot dependencies
 discord.py
 python-dotenv
+
 psycopg2-binary
+
+# Web requests
 requests
+
+# Database
 supabase
+
+# Async HTTP requests
 aiohttp
 
 # Install requirements with: pip install -r .\requirements.tx
