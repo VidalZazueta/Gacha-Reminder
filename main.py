@@ -6,9 +6,10 @@ from dotenv import load_dotenv
 import os
 import time
 
-# Import from your modularized wiki_api file
-from wiki_api import get_ongoing_events_async, OptimizedWikiAPI
+# Import from modularized wiki_api file
+from wiki_api import get_ongoing_events_async, WikiAPI
 
+# Harcoded URL, will change when scaling the application
 API_URL = "https://wutheringwaves.fandom.com/api.php"
 
 # Grab the discord token from the secure file
@@ -102,46 +103,8 @@ async def list_events(interaction: discord.Interaction):
         else:
             await interaction.response.send_message(f"Error: {error_msg}")
 
-# Alternative command using the class directly for more control
-@client.tree.command(name="events_debug", description="Get events with debug output", guild=GUILD_OBJECT)
-async def list_events_debug(interaction: discord.Interaction):
-    try:
-        await interaction.response.defer()
-        
-        # Create your own instance for more control
-        wiki_api = OptimizedWikiAPI(API_URL)
-        ongoing_events = await wiki_api.get_ongoing_events_async(debug=True)
-        
-        if not ongoing_events:
-            await interaction.followup.send("No ongoing events right now.")
-            return
-        
-        embed = discord.Embed(
-            title="Current Wuthering Waves Events (Debug Mode)",
-            color=discord.Color.orange(),
-        )
-        
-        event_list = []
-        for event in ongoing_events:
-            name = event['title']
-            time_left = event['time_remaining'] 
-            dates = event['date_range_str']
-            event_list.append(f"**{name}**\nTime left: {time_left} | {dates}")
-        
-        embed.description = "\n\n".join(event_list)
-        embed.set_footer(text=f"Found {len(ongoing_events)} active events • Debug mode enabled")
-        
-        await interaction.followup.send(embed=embed)
-        
-    except Exception as e:
-        print(f"Error in debug events command: {e}")
-        error_msg = f"Error fetching events: {str(e)[:100]}..."
-        
-        if interaction.response.is_done():
-            await interaction.followup.send(f"Error: {error_msg}")
-        else:
-            await interaction.response.send_message(f"Error: {error_msg}")
-            
+
+# Command to test the speed when getting events        
 @client.tree.command(name="events_timed", description="Get events with detailed timing", guild=GUILD_OBJECT)
 async def list_events_timed(interaction: discord.Interaction):
     overall_start = time.time()
@@ -154,7 +117,7 @@ async def list_events_timed(interaction: discord.Interaction):
         
         # Create WikiAPI instance
         wiki_start = time.time()
-        wiki_api = OptimizedWikiAPI(API_URL)
+        wiki_api = WikiAPI(API_URL)
         wiki_created = time.time()
         print(f"[TIMING] WikiAPI creation took: {round(wiki_created - wiki_start, 3)}s")
         
@@ -217,7 +180,10 @@ async def list_events_timed(interaction: discord.Interaction):
             await interaction.followup.send(f"Error: {error_msg}")
         else:
             await interaction.response.send_message(f"Error: {error_msg}")
-            
+
+
+#! Developer testing commands
+# Test the network when connecting to the MediaWiki API          
 @client.tree.command(name="test_network", description="Test network connectivity to wiki API", guild=GUILD_OBJECT)
 async def test_network(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -263,6 +229,46 @@ async def test_network(interaction: discord.Interaction):
         embed.add_field(name="Error", value=str(e)[:500], inline=False)
         
         await interaction.followup.send(embed=embed)
+        
+# Alternative command using the class directly for more control
+@client.tree.command(name="events_debug", description="Get events with debug output", guild=GUILD_OBJECT)
+async def list_events_debug(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer()
+        
+        # Create your own instance for more control
+        wiki_api = WikiAPI(API_URL)
+        ongoing_events = await wiki_api.get_ongoing_events_async(debug=True)
+        
+        if not ongoing_events:
+            await interaction.followup.send("No ongoing events right now.")
+            return
+        
+        embed = discord.Embed(
+            title="Current Wuthering Waves Events (Debug Mode)",
+            color=discord.Color.orange(),
+        )
+        
+        event_list = []
+        for event in ongoing_events:
+            name = event['title']
+            time_left = event['time_remaining'] 
+            dates = event['date_range_str']
+            event_list.append(f"**{name}**\nTime left: {time_left} | {dates}")
+        
+        embed.description = "\n\n".join(event_list)
+        embed.set_footer(text=f"Found {len(ongoing_events)} active events • Debug mode enabled")
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Error in debug events command: {e}")
+        error_msg = f"Error fetching events: {str(e)[:100]}..."
+        
+        if interaction.response.is_done():
+            await interaction.followup.send(f"Error: {error_msg}")
+        else:
+            await interaction.response.send_message(f"Error: {error_msg}")
 
 client.run(TOKEN)  # type: ignore - get a warning about str but this works
 

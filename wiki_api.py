@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Tuple
 import time
 
-class OptimizedWikiAPI:
+class WikiAPI:
     
     def __init__(self, API_URL: str):
         self.API_URL = API_URL
@@ -303,5 +303,5 @@ class OptimizedWikiAPI:
 # Convenience function for easy usage
 async def get_ongoing_events_async(API_URL: str, debug: bool = False) -> List[Dict]:
     """Convenience function - creates instance and calls async method"""
-    wiki = OptimizedWikiAPI(API_URL)
+    wiki = WikiAPI(API_URL)
     return await wiki.get_ongoing_events_async(debug=debug)
