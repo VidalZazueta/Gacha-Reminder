@@ -7,11 +7,15 @@ import time
 
 class WikiAPI:
     
-    def __init__(self, API_URL: str):
+    def __init__(self, API_URL: str, category_name: str = "Events"):
         self.API_URL = API_URL
+        self.category_name = category_name
     
-    async def get_category_members_async(self, category: str, limit: int = 250) -> List[Dict]:
+    async def get_category_members_async(self, category: Optional[str] = None, limit: int = 250) -> List[Dict]:
         """Highly optimized version with better batching and concurrent requests"""
+        # Use provided category or fall back to instance default
+        category_to_use = category or self.category_name
+        
         # Longer timeout and connection pooling
         timeout = aiohttp.ClientTimeout(total=60, connect=10)
         connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
@@ -25,7 +29,7 @@ class WikiAPI:
                     "action": "query",
                     "format": "json",
                     "list": "categorymembers",
-                    "cmtitle": f"Category:{category}",
+                    "cmtitle": f"Category:{category_to_use}",
                     "cmlimit": str(limit)
                 }
                 
@@ -35,7 +39,7 @@ class WikiAPI:
                     members = data.get("query", {}).get("categorymembers", [])
                 
                 step_end = time.time()
-                print(f"[FETCH] Got {len(members)} category members in {round(step_end - step_start, 2)}s")
+                print(f"[FETCH] Got {len(members)} category members from '{category_to_use}' in {round(step_end - step_start, 2)}s")
                 
                 if not members:
                     return []
@@ -125,19 +129,27 @@ class WikiAPI:
         
         date_str = date_str.strip()
         
+        # Enhanced formats including seconds - try most specific first
         formats = [
-            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",  # 2024-11-16 10:00:00 (ZZZ format) 
+            "%Y-%m-%d %H:%M",     # 2024-11-16 10:00
+            "%Y/%m/%d %H:%M:%S",  # Alternative with slashes
             "%Y/%m/%d %H:%M", 
-            "%Y-%m-%d",
-            "%Y/%m/%d"
+            "%Y-%m-%d",           # Date only
+            "%Y/%m/%d",           # Date only with slashes
+            "%B %d, %Y",          # November 16, 2024
+            "%b %d, %Y"           # Nov 16, 2024
         ]
         
-        for format in formats:
+        for format_str in formats:
             try:
-                return datetime.strptime(date_str, format)
+                parsed_date = datetime.strptime(date_str, format_str)
+                return parsed_date
             except ValueError:
                 continue
         
+        # If no format worked, let's log what we tried to parse
+        print(f"[DEBUG] Failed to parse date: '{date_str}' with any known format")
         return None
     
     def get_clean_event_name(self, content: str, title: str) -> str:
@@ -181,9 +193,12 @@ class WikiAPI:
             return f"{minutes}m"
     
     def parse_event_dates(self, text: str, title: str = "") -> Optional[Tuple[datetime, datetime]]:
-        """Parse start and end dates from wiki content"""
+        """Parse start and end dates from wiki content with timezone support"""
         start_match = re.search(r'\|\s*time_start\s*=\s*([^\n|]+)', text)
         end_match = re.search(r'\|\s*time_end\s*=\s*([^\n|]+)', text)
+        
+        # Also look for timezone offset (ZZZ format) - but it's optional
+        offset_match = re.search(r'\|\s*time_start_offset\s*=\s*([^\n|]+)', text)
         
         start_date = None
         end_date = None
@@ -191,10 +206,28 @@ class WikiAPI:
         if start_match:
             start_str = start_match.group(1).strip()
             start_date = self.parse_datetime_from_wiki_format(start_str)
+            
+            # Apply timezone offset ONLY if both date parsing succeeded AND offset exists
+            if start_date and offset_match:
+                offset_str = offset_match.group(1).strip()
+                if "GMT+8" in offset_str or "UTC+8" in offset_str:
+                    # Convert from GMT+8 to UTC by subtracting 8 hours
+                    start_date = start_date - timedelta(hours=8)
+                elif "GMT-" in offset_str or "UTC-" in offset_str:
+                    # Handle negative offsets if needed
+                    pass  # Add handling for other timezones as needed
+            # If no offset_match, leave the date as-is (assume it's already in the correct timezone)
         
         if end_match:
             end_str = end_match.group(1).strip()
             end_date = self.parse_datetime_from_wiki_format(end_str)
+            
+            # Apply same timezone offset to end date ONLY if offset exists
+            if end_date and offset_match:
+                offset_str = offset_match.group(1).strip()
+                if "GMT+8" in offset_str or "UTC+8" in offset_str:
+                    end_date = end_date - timedelta(hours=8)
+            # If no offset_match, leave the date as-is
         
         if start_date and end_date:
             return (start_date, end_date)
@@ -261,7 +294,7 @@ class WikiAPI:
         
         # Get events with content using async HTTP
         fetch_start = time.time()
-        events_with_content = await self.get_category_members_async("Events")
+        events_with_content = await self.get_category_members_async()
         fetch_end = time.time()
         
         if debug:
@@ -300,8 +333,18 @@ class WikiAPI:
         
         return current_events
 
-# Convenience function for easy usage
-async def get_ongoing_events_async(API_URL: str, debug: bool = False) -> List[Dict]:
+# Convenience functions for easy usage
+async def get_ongoing_events_async(API_URL: str, debug: bool = False, category: str = "Events") -> List[Dict]:
     """Convenience function - creates instance and calls async method"""
-    wiki = WikiAPI(API_URL)
+    wiki = WikiAPI(API_URL, category)
     return await wiki.get_ongoing_events_async(debug=debug)
+
+async def get_wuwa_events_async(debug: bool = False) -> List[Dict]:
+    """Get Wuthering Waves events"""
+    API_URL_WUWA = "https://wutheringwaves.fandom.com/api.php"
+    return await get_ongoing_events_async(API_URL_WUWA, debug=debug, category="Events")
+
+async def get_zzz_events_async(debug: bool = False) -> List[Dict]:
+    """Get Zenless Zone Zero events"""
+    API_URL_ZZZ = "https://zenless-zone-zero.fandom.com/api.php"
+    return await get_ongoing_events_async(API_URL_ZZZ, debug=debug, category="In-Game_Events")
