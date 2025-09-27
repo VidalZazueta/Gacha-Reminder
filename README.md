@@ -5,8 +5,10 @@ A discord bot to remind users about the current events in their favorite gacha g
 ## Goal
 The goal of this project is to create a discord bot to give users consistent reminders about the current events in their favorite gacha games. Showing users what events are available and what events will end soon will help them manage their time and prioritize the right game.
 
-## Progress
-Currently the game only handles event requests for the game Wuthering Waves. I plan to add a way to get events from other gacha games as well, such as Zenless Zone Zero, Genshin Impact, and more.
+## Current Progress
+Currently the game only handles event requests for the game Wuthering Waves. I plan to add a way to get events from other gacha games as well.  
+
+Currently the game supports getting the ingame events for the game Wuthering Waves and Zenless Zone Zero, which are the games I primarily play.
 
 ## Technologies Used
 Python  
