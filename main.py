@@ -6,9 +6,6 @@ from dotenv import load_dotenv
 import os
 import time
 
-#Testing changes from on sub branch to a primary branch
-
-
 # Import from modularized wiki_api file
 from wiki_api import get_ongoing_events_async, WikiAPI, get_wuwa_events_async, get_zzz_events_async
 
@@ -16,7 +13,7 @@ from wiki_api import get_ongoing_events_async, WikiAPI, get_wuwa_events_async, g
 API_URL_WUWA = "https://wutheringwaves.fandom.com/api.php"
 API_URL_ZZZ = "https://zenless-zone-zero.fandom.com/api.php"
 
-# Grab the discord token from the secure file
+# Grab the discord token and guild ID from the secure file
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = os.getenv('GUILD_ID')
@@ -36,11 +33,14 @@ class Client(commands.Bot):
         # Try catch block to handle any errors during command sync
         # This should sync the commands to the specified guild immediately
         try:
+            
             # Check if GUILD_ID is set
             if GUILD_ID is None:
                 raise ValueError("GUILD_ID environment variable is not set.")
             guild = discord.Object(id=int(GUILD_ID))
             sync = await self.tree.sync(guild=guild)
+            
+            #* When synced, the bot is connected and goes online in the discord server
             print(f'Synced {len(sync)} commands to guild {guild.id}')
         except Exception as e:
             print(f"Error syncing commands: {e}")
@@ -57,20 +57,18 @@ logging.basicConfig(level=logging.INFO)
 # Set up the bot client with command prefix and intents
 intents = discord.Intents.default()
 intents.message_content = True
+
+# Create the bot client
 client = Client(command_prefix='!', intents=intents)
 
-# Sample code to test the bot with commands
-@client.tree.command(name="hello", description="Says hello!", guild=GUILD_OBJECT)
-async def sayHello(interaction: discord.Interaction):
-    await interaction.response.send_message(f'Hello!')
 
-# Main slash command to get the events for Wuthering Waves using the async function
+# Command to get the events for Wuthering Waves
 @client.tree.command(name="events_wuwa", description="Get the current events for Wuthering Waves", guild=GUILD_OBJECT)
 async def list_events_WUWA(interaction: discord.Interaction):
     try:
         await interaction.response.defer()
         
-        # Use the new convenience function for WUWA
+        # Use the function to get the events for the game Wuthering Waves
         ongoing_events = await get_wuwa_events_async(debug=True)
         
         if not ongoing_events:
@@ -83,7 +81,7 @@ async def list_events_WUWA(interaction: discord.Interaction):
             color=discord.Color.blue(),
         )
         
-        # Format events simply
+        # Format events 
         event_list = []
         for event in ongoing_events:
             name = event['title']
@@ -91,12 +89,16 @@ async def list_events_WUWA(interaction: discord.Interaction):
             dates = event['date_range_str']
             
             event_list.append(f"**{name}**\nTime left: {time_left} | {dates}")
+            
+        # Add Wuthering Waves Image to embed
+        WuWaThumbnail = discord.File("images/WutheringWavesThumbnail.jpeg", filename="WuWaThumbnail.png")
+        embed.set_thumbnail(url="attachment://WuWaThumbnail.png")
         
         # Add events to embed
         embed.description = "\n\n".join(event_list)
         embed.set_footer(text=f"Found {len(ongoing_events)} active events • Data from Wuthering Waves Wiki")
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, file=WuWaThumbnail)
         
     except Exception as e:
         print(f"Error in events command: {e}")
@@ -107,7 +109,7 @@ async def list_events_WUWA(interaction: discord.Interaction):
         else:
             await interaction.response.send_message(f"Error: {error_msg}")
  
-# Fixed ZZZ command using the correct category
+# Command to get the events from Zenless Zone Zero
 @client.tree.command(name="events_zzz", description="Get the current events for Zenless Zone Zero", guild=GUILD_OBJECT)
 async def list_events_ZZZ(interaction: discord.Interaction):
     try:
@@ -134,12 +136,16 @@ async def list_events_ZZZ(interaction: discord.Interaction):
             dates = event['date_range_str']
             
             event_list.append(f"**{name}**\nTime left: {time_left} | {dates}")
+            
+        # Attach Zenless Zone Zero thumbnail to embed
+        ZZZThumbnail = discord.File("images/ZenlessZoneZeroThumbnail.png", filename="ZZZThumbnail.png")
+        embed.set_thumbnail(url="attachment://ZZZThumbnail.png")
         
         # Add events to embed
         embed.description = "\n\n".join(event_list)
         embed.set_footer(text=f"Found {len(ongoing_events)} active events • Data from Zenless Zone Zero Wiki")
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, file=ZZZThumbnail)
         
     except Exception as e:
         print(f"Error in ZZZ events command: {e}")

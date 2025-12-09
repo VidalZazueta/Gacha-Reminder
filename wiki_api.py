@@ -323,6 +323,7 @@ class WikiAPI:
         ]
         
         # Sort by end date
+        #! Currently there are errors here but the code still works
         current_events.sort(key=lambda x: x['end_date'] if x['end_date'].year != 2030 else datetime.max)
         
         total_end = time.time()
@@ -331,19 +332,26 @@ class WikiAPI:
             print(f"[RESULT] Found {len(current_events)} ongoing events")
             print(f"[TOTAL] Complete operation took {round(total_end - total_start, 2)}s")
         
+        #! Error here but the code still works
         return current_events
 
-# Convenience functions for easy usage
+# Modularized functions to use in main
+
+#* There are different functions for each game as the API call is different for each game.
+#* Notice how WuWa has the Category "events" while ZZZ has Category "In-Game_Events"
+
 async def get_ongoing_events_async(API_URL: str, debug: bool = False, category: str = "Events") -> List[Dict]:
     """Convenience function - creates instance and calls async method"""
     wiki = WikiAPI(API_URL, category)
     return await wiki.get_ongoing_events_async(debug=debug)
 
+# Function to get the events for the game wuthering waves
 async def get_wuwa_events_async(debug: bool = False) -> List[Dict]:
     """Get Wuthering Waves events"""
     API_URL_WUWA = "https://wutheringwaves.fandom.com/api.php"
     return await get_ongoing_events_async(API_URL_WUWA, debug=debug, category="Events")
 
+# Function to get the events for the game Zenless Zone Zero
 async def get_zzz_events_async(debug: bool = False) -> List[Dict]:
     """Get Zenless Zone Zero events"""
     API_URL_ZZZ = "https://zenless-zone-zero.fandom.com/api.php"
