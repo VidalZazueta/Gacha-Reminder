@@ -5,6 +5,14 @@ A discord bot to remind users about the current events in their favorite gacha g
 ## Goal
 The goal of this project is to create a discord bot to give users consistent reminders about the current events in their favorite gacha games. Showing users what events are available and what events will end soon will help them manage their time and prioritize the right game.
 
+## Showcase
+What the commands look like
+<img width="1072" height="178" alt="image" src="https://github.com/user-attachments/assets/d22d1d91-1030-4138-88eb-d2c806278cd0" />
+
+What the command outputs e.g The in-game events for the game Wuthering Waves
+<img width="764" height="713" alt="image" src="https://github.com/user-attachments/assets/b68a05a1-404b-495f-95cd-38a5ed8a91b3" />
+
+
 ## Current Progress
 Currently the game only handles event requests for the game Wuthering Waves. I plan to add a way to get events from other gacha games as well.  
 
