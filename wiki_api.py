@@ -324,7 +324,7 @@ class WikiAPI:
         
         # Sort by end date
         #! Currently there are errors here but the code still works
-        current_events.sort(key=lambda x: x['end_date'] if x['end_date'].year != 2030 else datetime.max)
+        current_events.sort(key=lambda x: x['end_date'] if x['end_date'].year != 2030 else datetime.max) # type: ignore
         
         total_end = time.time()
         if debug:
@@ -333,7 +333,7 @@ class WikiAPI:
             print(f"[TOTAL] Complete operation took {round(total_end - total_start, 2)}s")
         
         #! Error here but the code still works
-        return current_events
+        return current_events # type: ignore
 
 # Modularized functions to use in main
 
