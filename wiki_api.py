@@ -1,3 +1,17 @@
+"""
+MediaWiki API client and event-processing logic for the Gacha Reminder bot.
+
+Provides the :class:`WikiAPI` class for fetching page content from any
+MediaWiki-based wiki using the MediaWiki Action API, plus parsing
+utilities for extracting and normalizing event start/end dates from
+wikitext templates.
+
+Module-level convenience functions wrap :class:`WikiAPI` for the two
+supported games:
+
+* :func:`get_wuwa_events_async` – Wuthering Waves
+* :func:`get_zzz_events_async`  – Zenless Zone Zero
+"""
 import re
 import asyncio
 import aiohttp
@@ -6,13 +20,51 @@ from typing import List, Dict, Optional, Tuple
 import time
 
 class WikiAPI:
-    
+    """Async client for fetching and parsing game events from a MediaWiki wiki.
+
+    Uses the MediaWiki Action API (``api.php``) to list a category's
+    member pages and retrieve their wikitext content in batches. Parsed
+    events are filtered to only those currently ongoing and returned
+    sorted by end date.
+
+    Attributes:
+        API_URL (str): The ``api.php`` endpoint for the target wiki.
+        category_name (str): Default wiki category to query for events.
+    """
+
     def __init__(self, API_URL: str, category_name: str = "Events"):
+        """Initialize the WikiAPI client.
+
+        Args:
+            API_URL (str): Full URL to the wiki's ``api.php`` endpoint
+                (e.g. ``"https://wutheringwaves.fandom.com/api.php"``).
+            category_name (str): Wiki category to query for event pages.
+                Defaults to ``"Events"``.
+        """
         self.API_URL = API_URL
         self.category_name = category_name
     
     async def get_category_members_async(self, category: Optional[str] = None, limit: int = 250) -> List[Dict]:
-        """Highly optimized version with better batching and concurrent requests"""
+        """Fetch all members of a wiki category along with their wikitext content.
+
+        Uses concurrent batch requests (batch size 20) to minimize total
+        round-trip time. Each batch is fetched in parallel via
+        :func:`asyncio.gather`.
+
+        Args:
+            category (Optional[str]): Category name to query. Falls back
+                to :attr:`category_name` when ``None``.
+            limit (int): Maximum number of category members to retrieve
+                from the API (default ``250``).
+
+        Returns:
+            List[Dict]: List of dicts with keys:
+
+            * ``"title"`` (str) – page title.
+            * ``"content"`` (str) – raw wikitext of the page's main slot.
+
+            Returns an empty list on any fatal network or API error.
+        """
         # Use provided category or fall back to instance default
         category_to_use = category or self.category_name
         
@@ -79,7 +131,22 @@ class WikiAPI:
                 return []
     
     async def _fetch_batch_content(self, session: aiohttp.ClientSession, batch: List[Dict]) -> List[Dict]:
-        """Fetch content for a single batch of pages"""
+        """Fetch wikitext content for a single batch of pages in one API call.
+
+        Joins page titles with ``|`` to perform a multi-page ``revisions``
+        query, then maps the results back to the original member order.
+
+        Args:
+            session (aiohttp.ClientSession): An open aiohttp session to
+                reuse for the request.
+            batch (List[Dict]): A subset of category-member dicts, each
+                containing at least a ``"title"`` key.
+
+        Returns:
+            List[Dict]: Dicts with ``"title"`` and ``"content"`` for each
+            page in the batch that was found. Pages with no revisions get
+            an empty string for ``"content"``. Returns ``[]`` on error.
+        """
         try:
             titles = "|".join([member["title"] for member in batch])
             
@@ -123,7 +190,30 @@ class WikiAPI:
             return []
     
     def parse_datetime_from_wiki_format(self, date_str: str) -> Optional[datetime]:
-        """Parse datetime from various wiki formats"""
+        """Parse a datetime from one of several wiki date string formats.
+
+        Tries each supported format in order from most specific to least
+        specific. The returned datetime is **naive** (no timezone info).
+
+        Supported formats (in priority order):
+
+        * ``YYYY-MM-DD HH:MM:SS`` — e.g. ``"2024-11-16 10:00:00"`` (ZZZ)
+        * ``YYYY-MM-DD HH:MM``    — e.g. ``"2024-11-16 10:00"``
+        * ``YYYY/MM/DD HH:MM:SS`` — slash variant with time
+        * ``YYYY/MM/DD HH:MM``    — slash variant with time (short)
+        * ``YYYY-MM-DD``          — date only
+        * ``YYYY/MM/DD``          — date only, slash variant
+        * ``Month DD, YYYY``      — e.g. ``"November 16, 2024"``
+        * ``Mon DD, YYYY``        — e.g. ``"Nov 16, 2024"``
+
+        Args:
+            date_str (str): Raw date string extracted from wiki content.
+
+        Returns:
+            Optional[datetime]: Parsed naive datetime, or ``None`` if the
+            string is empty, ``"none"``/``"null"``/``"n/a"``, or does not
+            match any known format.
+        """
         if not date_str or date_str.strip().lower() in ['none', '', 'null', 'n/a']:
             return None
         
@@ -153,7 +243,21 @@ class WikiAPI:
         return None
     
     def get_clean_event_name(self, content: str, title: str) -> str:
-        """Get a clean event name for display"""
+        """Extract a clean display name for an event from its wikitext.
+
+        Attempts to read the ``| name = `` field from the wikitext
+        template. If that field is absent or identical to the page title,
+        falls back to the title with any trailing date suffix (e.g.
+        ``/2024-11-16`` or `` 2024-11-16``) stripped.
+
+        Args:
+            content (str): Raw wikitext of the event page.
+            title (str): Fallback page title used when no ``name`` field
+                is found.
+
+        Returns:
+            str: Human-readable event name suitable for embed display.
+        """
         name_match = re.search(r'\|\s*name\s*=\s*([^\n|]+)', content)
         if name_match:
             name = name_match.group(1).strip()
@@ -166,7 +270,24 @@ class WikiAPI:
         return clean_title
     
     def get_time_remaining(self, end_date: datetime) -> str:
-        """Calculate time remaining in a readable format"""
+        """Calculate human-readable time remaining until an event ends.
+
+        Treats any end date in the year ``2030`` as a sentinel for a
+        permanent/indefinite event.
+
+        Args:
+            end_date (datetime): The event's end datetime. May be naive
+                (assumed UTC) or timezone-aware.
+
+        Returns:
+            str: One of the following formats:
+
+            * ``"Permanent"`` — end year is 2030.
+            * ``"Ended"``     — the end date has already passed.
+            * ``"Xd Yh"``    — days and hours remaining.
+            * ``"Xh Ym"``    — hours and minutes remaining (< 1 day).
+            * ``"Xm"``       — minutes remaining (< 1 hour).
+        """
         if end_date.year == 2030: 
             return "Permanent"
         
@@ -193,7 +314,26 @@ class WikiAPI:
             return f"{minutes}m"
     
     def parse_event_dates(self, text: str, title: str = "") -> Optional[Tuple[datetime, datetime]]:
-        """Parse start and end dates from wiki content with timezone support"""
+        """Extract and normalize start/end datetimes from a wiki event page.
+
+        Reads ``| time_start =``, ``| time_end =``, and optionally
+        ``| time_start_offset =`` fields from the wikitext. When a
+        ``GMT+8`` / ``UTC+8`` offset is found, both dates are shifted
+        back by 8 hours to convert to UTC.
+
+        If ``time_end`` is absent or explicitly ``"none"``, the end date
+        is set to ``datetime(2030, 12, 31)`` which
+        :meth:`get_time_remaining` treats as permanent.
+
+        Args:
+            text (str): Raw wikitext of the event page.
+            title (str): Page title used for debug logging (default ``""``).
+
+        Returns:
+            Optional[Tuple[datetime, datetime]]: A ``(start, end)`` tuple
+            of naive datetimes (already offset-adjusted), or ``None`` if
+            no valid ``time_start`` could be parsed.
+        """
         start_match = re.search(r'\|\s*time_start\s*=\s*([^\n|]+)', text)
         end_match = re.search(r'\|\s*time_end\s*=\s*([^\n|]+)', text)
         
@@ -238,7 +378,30 @@ class WikiAPI:
         return None
     
     async def process_event_async(self, event_data: Dict, today: datetime, debug: bool = False) -> Optional[Dict]:
-        """Process a single event asynchronously"""
+        """Process a single raw event dict into a display-ready event dict.
+
+        Parses dates via :meth:`parse_event_dates`, checks whether the
+        event is currently ongoing, and assembles the result dict used by
+        embed builders.
+
+        Args:
+            event_data (Dict): A dict with ``"title"`` and ``"content"``
+                keys as returned by :meth:`get_category_members_async`.
+            today (datetime): Reference datetime for the "is ongoing"
+                check. May be naive (assumed UTC) or timezone-aware.
+            debug (bool): When ``True``, prints processing steps to
+                stdout (default ``False``).
+
+        Returns:
+            Optional[Dict]: A dict with the following keys if the event
+            is currently ongoing, otherwise ``None``:
+
+            * ``"title"`` (str)          – clean display name.
+            * ``"time_remaining"`` (str) – human-readable countdown.
+            * ``"start_date"`` (datetime) – parsed start datetime.
+            * ``"end_date"`` (datetime)   – parsed end datetime.
+            * ``"date_range_str"`` (str)  – e.g. ``"11/16 - 12/01"``.
+        """
         try:
             title = event_data["title"]
             content = event_data["content"]
@@ -284,7 +447,29 @@ class WikiAPI:
         return None
     
     async def get_ongoing_events_async(self, today: Optional[datetime] = None, debug: bool = False) -> List[Dict]:
-        """Get all ongoing events asynchronously with detailed timing"""
+        """Fetch, parse, and return all currently ongoing events.
+
+        Orchestrates the full pipeline:
+
+        1. Calls :meth:`get_category_members_async` to retrieve all pages
+           in the configured category.
+        2. Processes every page concurrently via
+           :meth:`process_event_async`.
+        3. Filters out non-ongoing events and exceptions.
+        4. Sorts remaining events by end date (permanent events last).
+
+        Args:
+            today (Optional[datetime]): Reference date for filtering.
+                Defaults to :func:`datetime.now` in UTC.
+            debug (bool): When ``True``, emits timing and count info to
+                stdout throughout the pipeline (default ``False``).
+
+        Returns:
+            List[Dict]: Ongoing event dicts sorted by ``end_date``,
+            each matching the shape described in
+            :meth:`process_event_async`. Returns ``[]`` if the category
+            has no members or all events have ended.
+        """
         if today is None:
             today = datetime.now(timezone.utc)
         
@@ -341,18 +526,54 @@ class WikiAPI:
 #* Notice how WuWa has the Category "events" while ZZZ has Category "In-Game_Events"
 
 async def get_ongoing_events_async(API_URL: str, debug: bool = False, category: str = "Events") -> List[Dict]:
-    """Convenience function - creates instance and calls async method"""
+    """Convenience wrapper that creates a :class:`WikiAPI` and fetches ongoing events.
+
+    Prefer the game-specific helpers (:func:`get_wuwa_events_async`,
+    :func:`get_zzz_events_async`) for typical usage; use this function
+    when targeting an arbitrary wiki or category.
+
+    Args:
+        API_URL (str): Full ``api.php`` URL of the target wiki.
+        debug (bool): Forward debug flag to :meth:`WikiAPI.get_ongoing_events_async`
+            (default ``False``).
+        category (str): Wiki category name to query (default ``"Events"``).
+
+    Returns:
+        List[Dict]: Ongoing event dicts; see :meth:`WikiAPI.process_event_async`
+        for the dict shape.
+    """
     wiki = WikiAPI(API_URL, category)
     return await wiki.get_ongoing_events_async(debug=debug)
 
 # Function to get the events for the game wuthering waves
 async def get_wuwa_events_async(debug: bool = False) -> List[Dict]:
-    """Get Wuthering Waves events"""
+    """Fetch currently ongoing events for Wuthering Waves.
+
+    Targets the Wuthering Waves Fandom wiki (``"Events"`` category).
+
+    Args:
+        debug (bool): When ``True``, prints timing and parsing details
+            to stdout (default ``False``).
+
+    Returns:
+        List[Dict]: Ongoing event dicts sorted by end date.
+    """
     API_URL_WUWA = "https://wutheringwaves.fandom.com/api.php"
     return await get_ongoing_events_async(API_URL_WUWA, debug=debug, category="Events")
 
 # Function to get the events for the game Zenless Zone Zero
 async def get_zzz_events_async(debug: bool = False) -> List[Dict]:
-    """Get Zenless Zone Zero events"""
+    """Fetch currently ongoing events for Zenless Zone Zero.
+
+    Targets the Zenless Zone Zero Fandom wiki (``"In-Game_Events"``
+    category), which uses a different category name than Wuthering Waves.
+
+    Args:
+        debug (bool): When ``True``, prints timing and parsing details
+            to stdout (default ``False``).
+
+    Returns:
+        List[Dict]: Ongoing event dicts sorted by end date.
+    """
     API_URL_ZZZ = "https://zenless-zone-zero.fandom.com/api.php"
     return await get_ongoing_events_async(API_URL_ZZZ, debug=debug, category="In-Game_Events")

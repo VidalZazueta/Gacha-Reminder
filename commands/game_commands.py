@@ -1,5 +1,14 @@
 # commands/game_commands.py
-# User-facing slash commands: /events_wuwa, /events_zzz, /events_all, /events_timed
+"""
+User-facing slash commands for displaying game events.
+
+Registers the following commands on the bot's application command tree:
+
+* ``/events_wuwa``  — current Wuthering Waves events with thumbnail.
+* ``/events_zzz``   — current Zenless Zone Zero events with thumbnail.
+* ``/events_all``   — events from all supported games in one embed.
+* ``/events_timed`` — Wuthering Waves events with fetch/process timing stats.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +26,27 @@ def _make_game_embed(
     *,
     extra_footer: str = "",
 ) -> tuple[discord.Embed, discord.File]:
-    """
-    Build the standard per-game embed + thumbnail File for a given game key.
-    Returns (embed, file) so callers can pass both to followup.send().
+    """Build the standard per-game embed and thumbnail file.
+
+    Looks up game metadata from :data:`config.GAME_CONFIG` and delegates
+    to :func:`embeds.build_events_embed` to produce a consistently styled
+    embed. The thumbnail image is loaded from disk as a
+    :class:`discord.File` and attached via ``attachment://`` URL so it
+    renders inline.
+
+    Args:
+        game_key (str): Key into :data:`config.GAME_CONFIG`
+            (``"wuwa"`` or ``"zzz"``).
+        events (list): List of ongoing event dicts as returned by the
+            wiki API.
+        extra_footer (str): Optional text appended to the embed footer
+            after the standard event count and source credit
+            (default ``""``).
+
+    Returns:
+        tuple[discord.Embed, discord.File]: The configured embed and the
+        thumbnail file object. Both must be passed to
+        ``interaction.followup.send()`` together.
     """
     cfg = GAME_CONFIG[game_key]
 
@@ -42,7 +69,19 @@ def _make_game_embed(
 
 
 def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: ignore[name-defined]
-    """Register all user-facing game commands onto the bot's command tree."""
+    """Register all user-facing game slash commands onto the bot's command tree.
+
+    Defines and registers the following guild-scoped slash commands:
+
+    * ``/events_wuwa``  — fetches and displays current Wuthering Waves events.
+    * ``/events_zzz``   — fetches and displays current Zenless Zone Zero events.
+    * ``/events_all``   — fetches both games concurrently and shows a combined embed.
+    * ``/events_timed`` — like ``/events_wuwa`` but includes fetch/process timing in the footer.
+
+    Args:
+        client (discord.ext.commands.Bot): The bot instance whose
+            ``tree`` the commands are added to.
+    """
 
     # ------------------------------------------------------------------ #
     #  /events_wuwa                                                        #
@@ -53,6 +92,14 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
         guild=GUILD_OBJECT,
     )
     async def events_wuwa(interaction: discord.Interaction) -> None:
+        """Slash command: display current Wuthering Waves events.
+
+        Defers the response, fetches events via :func:`wiki_api.get_wuwa_events_async`,
+        and sends a styled embed with a game thumbnail attached.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
             events = await get_wuwa_events_async(debug=True)
@@ -77,6 +124,14 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
         guild=GUILD_OBJECT,
     )
     async def events_zzz(interaction: discord.Interaction) -> None:
+        """Slash command: display current Zenless Zone Zero events.
+
+        Defers the response, fetches events via :func:`wiki_api.get_zzz_events_async`,
+        and sends a styled embed with a game thumbnail attached.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
             events = await get_zzz_events_async(debug=True)
@@ -101,6 +156,15 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
         guild=GUILD_OBJECT,
     )
     async def events_all(interaction: discord.Interaction) -> None:
+        """Slash command: display current events from all supported games.
+
+        Fetches Wuthering Waves and Zenless Zone Zero events concurrently
+        via :func:`asyncio.gather`, then builds a single combined embed
+        with a section per game.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
 
@@ -145,6 +209,15 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
         guild=GUILD_OBJECT,
     )
     async def events_timed(interaction: discord.Interaction) -> None:
+        """Slash command: display Wuthering Waves events with fetch/process timing.
+
+        Same output as ``/events_wuwa`` but includes fetch time, embed
+        build time, and total elapsed time in the embed footer. Useful
+        for performance monitoring.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         overall_start = time.time()
         try:
             await interaction.response.defer()

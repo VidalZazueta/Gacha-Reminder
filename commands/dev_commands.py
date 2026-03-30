@@ -1,8 +1,21 @@
 # commands/dev_commands.py
-# Developer / diagnostic slash commands:
-#   /events_debug, /events_debug_zzz, /events_timed (WUWA debug variant),
-#   /test_network, /diagnose_zzz, /test_zzz_parsing, /test_2025_event,
-#   /search_recent_zzz
+"""
+Developer and diagnostic slash commands for the Gacha Reminder bot.
+
+These commands are intended for internal debugging and are not meant for
+regular users. They expose low-level wiki API behaviour, raw parsing
+results, and network connectivity checks.
+
+Registered commands:
+
+* ``/events_debug``      — WUWA events with verbose debug output.
+* ``/events_debug_zzz``  — ZZZ events with verbose debug output.
+* ``/test_network``      — Connectivity and latency check for all wiki APIs.
+* ``/diagnose_zzz``      — Inspect ZZZ wiki category structure and sample content.
+* ``/test_zzz_parsing``  — Step-by-step date parsing test for a known ZZZ event.
+* ``/test_2025_event``   — Verify parsing for a specific 2025 ZZZ subpage.
+* ``/search_recent_zzz`` — Browse ZZZ In-Game_Events category grouped by year.
+"""
 from __future__ import annotations
 
 import re
@@ -25,7 +38,23 @@ def _event_status_text(
     start_aware: datetime,
     end_aware: datetime,
 ) -> str:
-    """Return a human-readable status emoji + label for an event."""
+    """Return a human-readable status emoji and label for an event.
+
+    All three datetimes must be timezone-aware to ensure correct date
+    comparisons across UTC offsets.
+
+    Args:
+        today_aware (datetime): Current UTC datetime (timezone-aware).
+        start_aware (datetime): Event start datetime (timezone-aware).
+        end_aware (datetime): Event end datetime (timezone-aware).
+
+    Returns:
+        str: One of:
+
+        * ``"🔮 Future event"``        — event has not started yet.
+        * ``"✅ Currently ongoing!"``  — event is active today.
+        * ``"🏁 Past event (ended)"``  — event has already ended.
+    """
     if today_aware.date() < start_aware.date():
         return "🔮 Future event"
     if today_aware.date() > end_aware.date():
@@ -34,7 +63,15 @@ def _event_status_text(
 
 
 def _make_aware(dt: datetime) -> datetime:
-    """Ensure a datetime is timezone-aware (UTC)."""
+    """Ensure a datetime is timezone-aware by attaching UTC if needed.
+
+    Args:
+        dt (datetime): A naive or aware datetime.
+
+    Returns:
+        datetime: The same datetime with :data:`datetime.timezone.utc`
+        attached if it was naive, or unchanged if already aware.
+    """
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
@@ -43,7 +80,20 @@ async def _fetch_page_content(
     api_url: str,
     title: str,
 ) -> str | None:
-    """Fetch raw wikitext for a single page title. Returns None if not found."""
+    """Fetch the raw wikitext for a single wiki page.
+
+    Queries the MediaWiki ``revisions`` API for the main slot content of
+    the given page title.
+
+    Args:
+        session (aiohttp.ClientSession): An open aiohttp session to reuse.
+        api_url (str): Full ``api.php`` URL of the target wiki.
+        title (str): Exact page title to fetch (case-sensitive).
+
+    Returns:
+        str | None: Raw wikitext string, or ``None`` if the page does not
+        exist, is marked as missing, or has no revisions.
+    """
     params = {
         "action": "query",
         "format": "json",
@@ -76,7 +126,20 @@ async def _fetch_category_members(
     category: str,
     limit: int = 100,
 ) -> list[dict]:
-    """Fetch members of a MediaWiki category."""
+    """Fetch the member pages of a MediaWiki category.
+
+    Args:
+        session (aiohttp.ClientSession): An open aiohttp session to reuse.
+        api_url (str): Full ``api.php`` URL of the target wiki.
+        category (str): Category name without the ``Category:`` prefix
+            (e.g. ``"In-Game_Events"``).
+        limit (int): Maximum number of members to return (default ``100``).
+
+    Returns:
+        list[dict]: List of member dicts as returned by the MediaWiki API.
+        Each dict contains at least a ``"title"`` key. Returns ``[]`` if
+        the category is empty or the request fails.
+    """
     params = {
         "action": "query",
         "format": "json",
@@ -94,7 +157,15 @@ async def _fetch_category_members(
 # ------------------------------------------------------------------ #
 
 def register_dev_commands(client) -> None:  # type: ignore[type-arg]
-    """Register all developer / diagnostic commands onto the bot's command tree."""
+    """Register all developer and diagnostic slash commands onto the bot's command tree.
+
+    All commands are prefixed with ``[DEV]`` in their description to
+    signal they are for internal use. Commands are scoped to the guild
+    defined in :data:`config.GUILD_OBJECT`.
+
+    Args:
+        client: The bot instance whose ``tree`` the commands are added to.
+    """
 
     # ---------------------------------------------------------------- #
     #  /events_debug  –  WUWA debug mode                               #
@@ -105,6 +176,11 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def events_debug(interaction: discord.Interaction) -> None:
+        """Slash command: display WUWA events fetched with debug logging enabled.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
             events = await get_wuwa_events_async(debug=True)
@@ -131,6 +207,11 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def events_debug_zzz(interaction: discord.Interaction) -> None:
+        """Slash command: display ZZZ events fetched with debug logging enabled.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
             events = await get_zzz_events_async(debug=True)
@@ -157,6 +238,14 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def test_network(interaction: discord.Interaction) -> None:
+        """Slash command: test connectivity and latency for all configured wiki APIs.
+
+        Sends a lightweight ``siteinfo`` query to each game's API URL and
+        reports response time and success status in an embed.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         await interaction.response.defer()
         embed = discord.Embed(title="Network Test Results", color=discord.Color.blue())
 
@@ -195,6 +284,15 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def diagnose_zzz(interaction: discord.Interaction) -> None:
+        """Slash command: probe ZZZ wiki category names and show a content sample.
+
+        Tests a predefined list of candidate category names against the ZZZ
+        wiki, reports how many pages each contains, and previews the wikitext
+        of the first page found along with any detected date fields.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
             embed = discord.Embed(title="ZZZ Wiki Diagnosis", color=discord.Color.gold())
@@ -265,6 +363,15 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def test_zzz_parsing(interaction: discord.Interaction) -> None:
+        """Slash command: step-by-step date parsing inspection for a known ZZZ event.
+
+        Fetches the page for ``"En-Nah" Assistant Program``, then displays:
+        raw field extraction, individual date parse results, the final
+        :meth:`WikiAPI.parse_event_dates` output, and the computed event status.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         TEST_EVENT = '"En-Nah" Assistant Program'
         try:
             await interaction.response.defer()
@@ -353,6 +460,15 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def test_2025_event(interaction: discord.Interaction) -> None:
+        """Slash command: verify date parsing for a specific 2025 ZZZ wiki subpage.
+
+        Targets ``"En-Nah" Into Your Lap/2025-09-24``, which uses the
+        dated subpage naming convention. Shows a content preview, parsed
+        dates, and event status.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         TEST_EVENT = '"En-Nah" Into Your Lap/2025-09-24'
         try:
             await interaction.response.defer()
@@ -418,6 +534,15 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
         guild=GUILD_OBJECT,
     )
     async def search_recent_zzz(interaction: discord.Interaction) -> None:
+        """Slash command: browse ZZZ In-Game_Events category grouped by year.
+
+        Fetches up to 100 members from the ``In-Game_Events`` category and
+        buckets them into 2025, 2024, and "other" groups. Displays the top
+        10 entries from 2025 and top 5 from 2024.
+
+        Args:
+            interaction (discord.Interaction): The invoking Discord interaction.
+        """
         try:
             await interaction.response.defer()
 
