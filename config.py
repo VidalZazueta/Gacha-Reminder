@@ -1,4 +1,31 @@
 # config.py - Centralized configuration and constants
+"""
+Centralized configuration and constants for the Gacha Reminder bot.
+
+Loads Discord credentials from a ``.env`` file via :mod:`dotenv`,
+defines wiki API endpoints, and assembles per-game metadata used by
+embed builders and command handlers.
+
+Attributes:
+    TOKEN (str): Discord bot token read from the ``DISCORD_TOKEN``
+        environment variable.
+    GUILD_ID (str): Target guild/server ID read from the ``GUILD_ID``
+        environment variable.
+    GUILD_OBJECT (discord.Object): Pre-built Discord guild object
+        constructed from :data:`GUILD_ID`.
+    API_URL_WUWA (str): MediaWiki API endpoint for the Wuthering Waves
+        Fandom wiki.
+    API_URL_ZZZ (str): MediaWiki API endpoint for the Zenless Zone Zero
+        Fandom wiki.
+    GAME_CONFIG (dict[str, dict]): Mapping of game keys (``"wuwa"``,
+        ``"zzz"``) to metadata dicts. Each dict contains:
+        ``display_name``, ``api_url``, ``category``, ``color``,
+        ``emoji``, ``thumbnail_path``, and ``thumbnail_filename``.
+
+Raises:
+    ValueError: If ``DISCORD_TOKEN`` or ``GUILD_ID`` are not set in the
+        environment.
+"""
 import os
 from dotenv import load_dotenv
 import discord
