@@ -113,7 +113,7 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
 
         except Exception as exc:
             print(f"[events_wuwa] {exc}")
-            await send_error(interaction, str(exc)[:100])
+            await send_error(interaction, "Failed to fetch events. Please try again later.")
 
     # ------------------------------------------------------------------ #
     #  /events_zzz                                                         #
@@ -145,7 +145,7 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
 
         except Exception as exc:
             print(f"[events_zzz] {exc}")
-            await send_error(interaction, str(exc)[:100])
+            await send_error(interaction, "Failed to fetch events. Please try again later.")
 
     # ------------------------------------------------------------------ #
     #  /events_all                                                         #
@@ -198,7 +198,7 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
 
         except Exception as exc:
             print(f"[events_all] {exc}")
-            await send_error(interaction, str(exc)[:100])
+            await send_error(interaction, "Failed to fetch events. Please try again later.")
 
     # ------------------------------------------------------------------ #
     #  /events_timed  (shows WUWA events + fetch timing stats)            #
@@ -260,4 +260,4 @@ def register_game_commands(client: discord.ext.commands.Bot) -> None:  # type: i
         except Exception as exc:
             elapsed = round(time.time() - overall_start, 2)
             print(f"[events_timed] Failed after {elapsed}s: {exc}")
-            await send_error(interaction, f"Failed after {elapsed}s: {str(exc)[:80]}")
+            await send_error(interaction, f"Failed after {elapsed}s. Please try again later.")

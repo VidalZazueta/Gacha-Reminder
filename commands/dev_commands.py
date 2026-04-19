@@ -196,7 +196,7 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
             await interaction.followup.send(embed=embed)
         except Exception as exc:
             print(f"[events_debug] {exc}")
-            await interaction.followup.send(embed=build_error_embed(description=str(exc)[:500]))
+            await interaction.followup.send(embed=build_error_embed(description="Failed to fetch events. Check console for details."))
 
     # ---------------------------------------------------------------- #
     #  /events_debug_zzz  –  ZZZ debug mode                            #
@@ -227,7 +227,7 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
             await interaction.followup.send(embed=embed)
         except Exception as exc:
             print(f"[events_debug_zzz] {exc}")
-            await interaction.followup.send(embed=build_error_embed(description=str(exc)[:500]))
+            await interaction.followup.send(embed=build_error_embed(description="Failed to fetch events. Check console for details."))
 
     # ---------------------------------------------------------------- #
     #  /test_network                                                    #
@@ -265,13 +265,15 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
                             inline=True,
                         )
                     except Exception as exc:
+                        print(f"[test_network] {cfg['display_name']}: {exc}")
                         embed.add_field(
                             name=f"{cfg['emoji']} {cfg['display_name']}",
-                            value=f"Status: ❌ Failed\nError: {str(exc)[:50]}",
+                            value=f"Status: ❌ Failed\nError: {type(exc).__name__}",
                             inline=True,
                         )
         except Exception as exc:
-            embed = build_error_embed(title="Network Test Failed", description=str(exc)[:500])
+            print(f"[test_network] {exc}")
+            embed = build_error_embed(title="Network Test Failed", description="Network test encountered an error. Check console for details.")
 
         await interaction.followup.send(embed=embed)
 
@@ -313,7 +315,8 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
                         else:
                             lines.append(f"**{cat}**: No pages found")
                     except Exception as exc:
-                        lines.append(f"**{cat}**: Error – {str(exc)[:50]}")
+                        print(f"[diagnose_zzz] {cat}: {exc}")
+                        lines.append(f"**{cat}**: Error – {type(exc).__name__}")
 
                 embed.add_field(name="Category Analysis", value="\n".join(lines), inline=False)
 
@@ -350,8 +353,9 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
 
             await interaction.followup.send(embed=embed)
         except Exception as exc:
+            print(f"[diagnose_zzz] {exc}")
             await interaction.followup.send(
-                embed=build_error_embed("Diagnosis Failed", str(exc)[:500])
+                embed=build_error_embed("Diagnosis Failed", "Diagnosis encountered an error. Check console for details.")
             )
 
     # ---------------------------------------------------------------- #
@@ -447,8 +451,9 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
             await interaction.followup.send(embed=embed)
 
         except Exception as exc:
+            print(f"[test_zzz_parsing] {exc}")
             await interaction.followup.send(
-                embed=build_error_embed("Parsing Test Failed", str(exc))
+                embed=build_error_embed("Parsing Test Failed", "Parsing test encountered an error. Check console for details.")
             )
 
     # ---------------------------------------------------------------- #
@@ -521,8 +526,9 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
             await interaction.followup.send(embed=embed)
 
         except Exception as exc:
+            print(f"[test_2025_event] {exc}")
             await interaction.followup.send(
-                embed=build_error_embed("Test Failed", str(exc))
+                embed=build_error_embed("Test Failed", "Test encountered an error. Check console for details.")
             )
 
     # ---------------------------------------------------------------- #
@@ -583,6 +589,7 @@ def register_dev_commands(client) -> None:  # type: ignore[type-arg]
             await interaction.followup.send(embed=embed)
 
         except Exception as exc:
+            print(f"[search_recent_zzz] {exc}")
             await interaction.followup.send(
-                embed=build_error_embed("Search Failed", str(exc))
+                embed=build_error_embed("Search Failed", "Search encountered an error. Check console for details.")
             )

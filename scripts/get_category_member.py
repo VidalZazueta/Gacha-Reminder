@@ -1,0 +1,1 @@
+# Python script to get the category member of the specified game
