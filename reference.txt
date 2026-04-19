@@ -1,0 +1,121 @@
+================================================================================
+  DISCORD.PY API REFERENCE — SYMBOLS USED IN THIS PROJECT
+  Source: https://discordpy.readthedocs.io/en/stable/api.html
+================================================================================
+
+
+discord.ext.commands.Bot
+------------------------
+  commands.Bot
+    Base class for the custom Client in main.py. Provides the `tree`
+    attribute and the `run()` method.
+    Used in: main.py
+
+  Bot.run(token)
+    Starts the bot and connects to Discord.
+    Used in: main.py:66
+
+  Bot.tree
+    The app_commands.CommandTree instance used to register slash commands.
+    Used in: main.py, commands/game_commands.py, commands/dev_commands.py
+
+
+app_commands.CommandTree
+------------------------
+  tree.command(name, description, guild)
+    Decorator that registers a slash command to the bot's command tree,
+    scoped to the specified guild.
+    Used in: commands/game_commands.py:89, commands/dev_commands.py:173
+
+  tree.sync(guild)
+    Pushes all registered commands to the target guild.
+    Used in: main.py:41
+
+
+discord.Interaction
+-------------------
+  interaction.response.defer()
+    Defers the interaction response, preventing a timeout while the bot
+    fetches data asynchronously.
+    Used in: commands/game_commands.py:104, commands/dev_commands.py
+
+  interaction.response.send_message(content)
+    Sends an immediate response to the interaction.
+    Used in: embeds/embeds.py:103
+
+  interaction.response.is_done()
+    Returns True if the interaction has already been responded to or
+    deferred. Used to decide between send_message and followup.send.
+    Used in: embeds/embeds.py:101
+
+  interaction.followup.send(content, embed, file)
+    Sends a follow-up message after the interaction has been deferred.
+    Used in: commands/game_commands.py:112, commands/dev_commands.py
+
+
+discord.Embed
+-------------
+  discord.Embed(title, color)
+    Constructs a Discord embed card with a title and accent color.
+    Used in: embeds/embeds.py:67, commands/game_commands.py, commands/dev_commands.py
+
+  embed.description
+    Sets the main body text of the embed.
+    Used in: embeds/embeds.py
+
+  embed.set_footer(text)
+    Sets the footer line displayed at the bottom of the embed.
+    Used in: embeds/embeds.py:72, commands/game_commands.py
+
+  embed.set_thumbnail(url)
+    Attaches a thumbnail image to the embed using an attachment:// URL
+    to reference a locally uploaded discord.File.
+    Used in: commands/game_commands.py:66
+
+  embed.add_field(name, value, inline)
+    Adds a labeled field section to the embed body.
+    Used in: commands/dev_commands.py:318
+
+
+discord.Color
+-------------
+  Color.blue()      Used for WuWa network test and ZZZ parsing test embeds.
+  Color.orange()    Used for ZZZ game embeds and WUWA debug embeds.
+  Color.red()       Used for error embeds and ZZZ debug embeds.
+  Color.purple()    Used for the all-games combined embed and ZZZ search.
+  Color.gold()      Used for /events_timed and /diagnose_zzz embeds.
+  Color.green()     Used for /test_2025_event embed.
+
+  All used in: embeds/embeds.py, commands/game_commands.py, commands/dev_commands.py
+
+
+discord.File
+------------
+  discord.File(fp, filename)
+    Loads a local image file to attach to a message. Used to send game
+    thumbnails inline with embeds via the attachment:// URL scheme.
+    Used in: commands/game_commands.py:65
+
+
+discord.Object
+--------------
+  discord.Object(id)
+    Creates a lightweight Discord object from a raw ID. Used to build a
+    guild reference for scoping slash commands to a specific server without
+    fetching the full Guild object.
+    Used in: config/config.py:44
+
+
+discord.Intents
+---------------
+  Intents.default()
+    Returns the default set of gateway intents with most common events
+    enabled.
+    Used in: main.py:53
+
+  intents.message_content
+    Boolean flag that enables access to message content in events.
+    Set to True in this project.
+    Used in: main.py:54
+
+================================================================================

@@ -43,6 +43,10 @@ if not GUILD_ID:
 
 GUILD_OBJECT = discord.Object(id=int(GUILD_ID))
 
+# --- Full PHP Links --- #
+# Wuthering Waves: https://wutheringwaves.fandom.com/api.php?action=query&format=json&list=categorymembers&cmtitle=Category:Events&cmlimit=250
+# Zenless Zone Zero: https://zenless-zone-zero.fandom.com/api.php?action=query&format=json&list=categorymembers&cmtitle=Category:In-Game_Events&cmlimit=250
+
 # --- Wiki API URLs ---
 API_URL_WUWA = "https://wutheringwaves.fandom.com/api.php"
 API_URL_ZZZ  = "https://zenless-zone-zero.fandom.com/api.php"
