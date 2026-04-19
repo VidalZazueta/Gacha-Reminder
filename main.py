@@ -15,7 +15,7 @@ from commands import register_game_commands, register_dev_commands
 
 
 # ------------------------------------------------------------------ #
-#  Bot client                                                          #
+#  Bot client                                                        #
 # ------------------------------------------------------------------ #
 
 class Client(commands.Bot):
@@ -55,7 +55,7 @@ intents.message_content = True
 
 client = Client(command_prefix="!", intents=intents)
 
-# Register all slash commands
+# Register slash commands
 register_game_commands(client)
 register_dev_commands(client)
 
@@ -64,5 +64,3 @@ register_dev_commands(client)
 # ------------------------------------------------------------------ #
 
 client.run(TOKEN)  # type: ignore[arg-type]
-
-# TODO: Add a command to let users pick which game they want to see events for,
