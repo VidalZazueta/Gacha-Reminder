@@ -17,7 +17,7 @@ import discord
 
 from config import GUILD_OBJECT, GAME_CONFIG
 from embeds import build_events_embed, build_error_embed, send_error
-from wiki_api import WikiAPI, get_wuwa_events_async, get_zzz_events_async
+from api import WikiAPI, get_wuwa_events_async, get_zzz_events_async
 
 
 def _make_game_embed(

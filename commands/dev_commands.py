@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 from config import GUILD_OBJECT, GAME_CONFIG, API_URL_WUWA, API_URL_ZZZ
 from embeds import build_events_embed, build_error_embed
-from wiki_api import WikiAPI, get_wuwa_events_async, get_zzz_events_async
+from api import WikiAPI, get_wuwa_events_async, get_zzz_events_async
 
 
 # ------------------------------------------------------------------ #

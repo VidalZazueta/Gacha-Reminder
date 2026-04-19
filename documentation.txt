@@ -1,0 +1,325 @@
+================================================================================
+  GACHA REMINDER BOT — PROJECT DOCUMENTATION
+================================================================================
+
+OVERVIEW
+--------
+A Discord bot that fetches and displays currently ongoing in-game events for
+gacha games. It scrapes Fandom wikis using the MediaWiki Action API, parses
+event dates from wikitext templates, and presents them as styled Discord embeds
+with game thumbnails and time-remaining countdowns.
+
+Supported games:
+  - Wuthering Waves  (wutheringwaves.fandom.com)
+  - Zenless Zone Zero (zenless-zone-zero.fandom.com)
+
+
+FILE STRUCTURE
+--------------
+Gacha-Reminder/
+├── main.py                    Entry point — bot setup, logging, command registration
+├── api/
+│   ├── __init__.py            Re-exports WikiAPI and convenience event functions
+│   └── wiki_api.py            MediaWiki API client and event parsing logic
+├── config/
+│   ├── __init__.py            Re-exports TOKEN, GUILD_ID, GUILD_OBJECT, API URLs, GAME_CONFIG
+│   └── config.py              Credentials, API URLs, and per-game metadata
+├── embeds/
+│   ├── __init__.py            Re-exports all embed builder functions
+│   └── embeds.py              Reusable Discord embed factory functions
+├── commands/
+│   ├── __init__.py            Re-exports register_game_commands / register_dev_commands
+│   ├── game_commands.py       User-facing slash commands for displaying events
+│   └── dev_commands.py        Developer/diagnostic slash commands
+├── images/
+│   ├── WutheringWavesThumbnail.jpeg
+│   └── ZenlessZoneZeroThumbnail.png
+├── requirements.txt           Python dependencies
+└── .env                       Discord token and guild ID (not committed)
+
+
+ARCHITECTURE
+------------
+The bot follows a straightforward linear pipeline on each command invocation:
+
+  Discord interaction
+       │
+       ▼
+  game_commands.py  ──►  api.WikiAPI
+       │                      │
+       │               1. get_category_members_async()
+       │                  └─ categorymembers API query
+       │                  └─ _fetch_batch_content() × N batches (concurrent)
+       │               2. process_event_async() × all pages (concurrent)
+       │                  └─ parse_event_dates()
+       │                  └─ get_clean_event_name()
+       │                  └─ get_time_remaining()
+       │               3. Filter to ongoing, sort by end_date
+       │
+       ▼
+  embeds/embeds.py  (build_events_embed / _make_game_embed)
+       │
+       ▼
+  Discord followup embed with thumbnail
+
+All I/O (HTTP requests, Discord API calls) is async via aiohttp and discord.py.
+Category members are fetched in parallel batches of 20 pages each using
+asyncio.gather, keeping total fetch time low even for large categories.
+
+
+MODULES
+-------
+
+---- main.py ----
+
+  Class: Client(commands.Bot)
+    Custom bot subclass. Overrides on_ready() to sync the slash command tree
+    to the configured guild on startup.
+
+  Client.on_ready()
+    Called by discord.py after successful login. Prints the bot user and calls
+    tree.sync(guild=GUILD_OBJECT). Any sync error is caught and logged without
+    crashing the bot.
+
+  Module-level setup:
+    - Configures basicConfig logging at INFO level.
+    - Creates discord.Intents with message_content=True.
+    - Instantiates Client with command_prefix="!".
+    - Calls register_game_commands(client) and register_dev_commands(client).
+    - Starts the bot with client.run(TOKEN).
+
+
+---- config/config.py ----
+
+  Constants:
+    TOKEN         str   Discord bot token from DISCORD_TOKEN env var.
+    GUILD_ID      str   Target guild/server ID from GUILD_ID env var.
+    GUILD_OBJECT  discord.Object   Pre-built guild object for scoping commands.
+    API_URL_WUWA  str   "https://wutheringwaves.fandom.com/api.php"
+    API_URL_ZZZ   str   "https://zenless-zone-zero.fandom.com/api.php"
+
+  GAME_CONFIG  dict[str, dict]
+    Keyed by game identifier ("wuwa", "zzz"). Each entry contains:
+      display_name       Human-readable game name.
+      api_url            MediaWiki api.php endpoint.
+      category           Wiki category name for events (differs per game).
+      color              discord.Color for embed accents.
+      emoji              Emoji prefix used in combined embeds.
+      thumbnail_path     Relative path to the local thumbnail image.
+      thumbnail_filename Filename used in the attachment:// embed URL.
+
+  Raises ValueError on import if either required env var is missing.
+
+
+---- api/wiki_api.py ----
+
+  Class: WikiAPI
+    Async MediaWiki client for fetching event pages and parsing event metadata.
+
+    __init__(API_URL, category_name="Events")
+      Stores the api.php endpoint and default category.
+
+    get_category_members_async(category=None, limit=250)  →  List[Dict]
+      Queries the categorymembers API endpoint to get all page titles in the
+      given category, then fetches wikitext for all pages using concurrent
+      batches of 20 (via _fetch_batch_content). Returns a list of dicts with
+      keys "title" and "content". Returns [] on network error.
+
+    _fetch_batch_content(session, batch)  →  List[Dict]
+      Internal helper. Sends a single multi-title revisions query for up to 20
+      pages and maps the results back to the original member list. Returns
+      dicts with "title" and "content" (empty string if no revisions).
+
+    parse_datetime_from_wiki_format(date_str)  →  Optional[datetime]
+      Tries parsing a date string against 8 formats in priority order (most
+      specific to least). Returns a naive datetime or None.
+      Supported formats:
+        YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM,
+        YYYY/MM/DD HH:MM:SS, YYYY/MM/DD HH:MM,
+        YYYY-MM-DD, YYYY/MM/DD,
+        Month DD YYYY, Mon DD YYYY
+
+    get_clean_event_name(content, title)  →  str
+      Reads the "| name =" field from wikitext. Falls back to the page title
+      with any trailing date suffix (e.g. "/2024-11-16") stripped.
+
+    get_time_remaining(end_date)  →  str
+      Returns a human-readable countdown string. Treats year 2030 as a
+      "Permanent" sentinel. Output format: "Xd Yh", "Xh Ym", "Xm", or "Ended".
+
+    parse_event_dates(text, title="")  →  Optional[Tuple[datetime, datetime]]
+      Extracts | time_start =, | time_end =, and | time_start_offset = from
+      wikitext. If a GMT+8/UTC+8 offset is found, both dates are shifted back
+      8 hours to convert to UTC. If time_end is absent or "none", sets end
+      date to datetime(2030, 12, 31) (permanent sentinel). Returns (start, end)
+      or None if start could not be parsed.
+
+    process_event_async(event_data, today, debug=False)  →  Optional[Dict]
+      Parses dates for a single event, checks if it is currently ongoing
+      (start <= today <= end), and returns a display dict:
+        title          Clean event name.
+        time_remaining Human-readable countdown string.
+        start_date     Parsed start datetime.
+        end_date       Parsed end datetime.
+        date_range_str e.g. "11/16 - 12/01" or "11/16 - Permanent"
+      Returns None if dates cannot be parsed or the event is not ongoing.
+
+    get_ongoing_events_async(today=None, debug=False)  →  List[Dict]
+      Full pipeline orchestrator:
+        1. Fetches all category members with content.
+        2. Processes all events concurrently via asyncio.gather.
+        3. Filters None results and exceptions.
+        4. Sorts by end_date (permanent events last).
+      Returns the sorted list of ongoing event dicts.
+
+  Module-level convenience functions:
+
+    get_ongoing_events_async(API_URL, debug=False, category="Events")
+      Creates a WikiAPI instance and calls get_ongoing_events_async. Used when
+      targeting an arbitrary wiki/category.
+
+    get_wuwa_events_async(debug=False)
+      Targets the Wuthering Waves Fandom wiki with category "Events".
+
+    get_zzz_events_async(debug=False)
+      Targets the Zenless Zone Zero Fandom wiki with category "In-Game_Events".
+      Note: ZZZ uses a different category name than WuWa.
+
+
+---- embeds/embeds.py ----
+
+  build_event_list(events, show_dates=True)  →  List[str]
+    Formats each event dict into a markdown string:
+      with dates:    "**Name**\nTime left: Xd Yh | MM/DD - MM/DD"
+      without dates: "**Name** - Xd Yh"
+
+  build_events_embed(title, events, footer, color, show_dates=True)  →  discord.Embed
+    Builds a full embed using build_event_list for the description. Falls back
+    to "No ongoing events right now." when events is empty.
+
+  build_error_embed(title="Error", description="")  →  discord.Embed
+    Builds a red-colored error embed.
+
+  send_error(interaction, message)  →  coroutine
+    Sends an error message that works regardless of interaction state: uses
+    followup.send if already deferred, otherwise response.send_message.
+
+
+---- commands/game_commands.py ----
+
+  _make_game_embed(game_key, events, extra_footer="")  →  (discord.Embed, discord.File)
+    Builds the standard per-game embed and loads the thumbnail image from disk
+    as a discord.File. Attaches the thumbnail via attachment:// URL. Used by
+    all single-game slash commands.
+
+  register_game_commands(client)
+    Registers the following guild-scoped slash commands:
+
+    /events_wuwa
+      Defers, fetches WuWa events (debug=True), sends styled embed + thumbnail.
+
+    /events_zzz
+      Defers, fetches ZZZ events (debug=True), sends styled embed + thumbnail.
+
+    /events_all
+      Defers, fetches WuWa and ZZZ events concurrently via asyncio.gather, then
+      sends a single combined purple embed with a section per game. No thumbnail.
+      Footer shows total active events across all games.
+
+    /events_timed
+      Like /events_wuwa but records fetch time, embed build time, and total
+      elapsed time; appends all timing stats to the embed footer. Uses gold color.
+
+
+---- commands/dev_commands.py ----
+
+  Shared helpers (module-level):
+
+    _event_status_text(today_aware, start_aware, end_aware)  →  str
+      Returns "🔮 Future event", "✅ Currently ongoing!", or "🏁 Past event (ended)"
+      based on date comparison.
+
+    _make_aware(dt)  →  datetime
+      Attaches UTC timezone to a naive datetime; leaves aware datetimes unchanged.
+
+    _fetch_page_content(session, api_url, title)  →  str | None
+      Fetches raw wikitext for a single page title from a MediaWiki API.
+      Returns None if the page is missing or has no revisions.
+
+    _fetch_category_members(session, api_url, category, limit=100)  →  list[dict]
+      Fetches category member list from a MediaWiki API.
+
+  register_dev_commands(client)
+    Registers the following [DEV] guild-scoped slash commands:
+
+    /events_debug
+      Runs get_wuwa_events_async(debug=True) and displays results. Orange embed.
+
+    /events_debug_zzz
+      Runs get_zzz_events_async(debug=True) and displays results. Red embed.
+
+    /test_network
+      Sends a siteinfo query to each game's API URL and reports response time
+      and success/failure in a blue embed.
+
+    /diagnose_zzz
+      Tests a predefined list of ZZZ category name candidates, reports how many
+      pages each contains, and shows a raw wikitext preview + detected date
+      fields for the first page found. Gold embed.
+
+    /test_zzz_parsing
+      Fetches the page for '"En-Nah" Assistant Program' and walks through the
+      full parsing pipeline step by step: raw field extraction, individual date
+      parse, final parse_event_dates result, and event status. Blue embed.
+
+    /test_2025_event
+      Targets '"En-Nah" Into Your Lap/2025-09-24' (dated subpage convention).
+      Shows content preview, parsed dates, and event status. Green embed.
+
+    /search_recent_zzz
+      Fetches up to 100 members from ZZZ In-Game_Events, groups them by year
+      (2025, 2024, other), and displays top 10/5 entries per group. Purple embed.
+
+
+SLASH COMMAND SUMMARY
+---------------------
+  Command              Audience   Description
+  -------------------  ---------  ------------------------------------------------
+  /events_wuwa         Users      Current Wuthering Waves events with thumbnail
+  /events_zzz          Users      Current Zenless Zone Zero events with thumbnail
+  /events_all          Users      Events from all supported games in one embed
+  /events_timed        Users      WuWa events with fetch/process timing in footer
+  /events_debug        Dev        WuWa events with verbose debug output
+  /events_debug_zzz    Dev        ZZZ events with verbose debug output
+  /test_network        Dev        Connectivity and latency check for all wiki APIs
+  /diagnose_zzz        Dev        Inspect ZZZ wiki category structure and content
+  /test_zzz_parsing    Dev        Step-by-step parsing test for a known ZZZ event
+  /test_2025_event     Dev        Verify parsing for a specific 2025 ZZZ subpage
+  /search_recent_zzz   Dev        Browse ZZZ events grouped by year
+
+
+ENVIRONMENT VARIABLES (.env)
+-----------------------------
+  DISCORD_TOKEN   Bot token from the Discord Developer Portal.
+  GUILD_ID        Discord server ID to register and scope slash commands.
+
+
+DEPENDENCIES (requirements.txt)
+--------------------------------
+  discord.py   Async Discord API wrapper (includes ext.commands, app_commands).
+  aiohttp      Async HTTP client for MediaWiki API requests.
+  python-dotenv  Loads .env file into os.environ.
+
+
+NOTES
+-----
+- All slash commands are guild-scoped (not global), so changes sync instantly
+  without the 1-hour global propagation delay.
+- ZZZ uses category "In-Game_Events" while WuWa uses "Events" — this is why
+  each game has its own get_*_events_async function and GAME_CONFIG entry.
+- Dates without a timezone offset in the wikitext are assumed to already be in
+  the correct timezone (treated as UTC). Only pages with an explicit GMT+8 or
+  UTC+8 offset field trigger the 8-hour subtraction.
+- The year 2030 is used as a sentinel value for events with no end date, which
+  get_time_remaining() displays as "Permanent".
+================================================================================
