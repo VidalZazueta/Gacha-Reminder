@@ -44,18 +44,68 @@ class WikiAPI:
         self.API_URL = API_URL
         self.category_name = category_name
     
-    async def get_category_members_async(self, category: Optional[str] = None, limit: int = 250) -> List[Dict]:
+    async def _fetch_all_category_members(
+        self,
+        session: aiohttp.ClientSession,
+        category: str,
+        limit: int = 500,
+    ) -> List[Dict]:
+        """Fetch every member of a wiki category, following cmcontinue pagination.
+
+        Sends repeated categorymembers queries until the API returns no
+        continuation token, collecting all pages across all pages of results.
+        Using the maximum API limit of 500 per request minimizes round trips.
+
+        Args:
+            session (aiohttp.ClientSession): An open aiohttp session to reuse.
+            category (str): Category name without the ``Category:`` prefix.
+            limit (int): Members per API request. Maximum allowed by MediaWiki
+                is ``500`` (default ``500``).
+
+        Returns:
+            List[Dict]: All category member dicts returned by the API across
+            all pages. Each dict contains at least a ``"title"`` key.
+        """
+        all_members: List[Dict] = []
+        params: Dict = {
+            "action": "query",
+            "format": "json",
+            "list": "categorymembers",
+            "cmtitle": f"Category:{category}",
+            "cmlimit": str(limit),
+        }
+
+        page = 0
+        while True:
+            page += 1
+            async with session.get(self.API_URL, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
+
+            members = data.get("query", {}).get("categorymembers", [])
+            all_members.extend(members)
+            print(f"[FETCH] Page {page}: got {len(members)} members (total so far: {len(all_members)})")
+
+            continue_data = data.get("continue")
+            if not continue_data:
+                break
+
+            params["cmcontinue"] = continue_data["cmcontinue"]
+
+        return all_members
+
+    async def get_category_members_async(self, category: Optional[str] = None, limit: int = 500) -> List[Dict]:
         """Fetch all members of a wiki category along with their wikitext content.
 
-        Uses concurrent batch requests (batch size 20) to minimize total
-        round-trip time. Each batch is fetched in parallel via
-        :func:`asyncio.gather`.
+        Uses :meth:`_fetch_all_category_members` to paginate through the full
+        category (following ``cmcontinue`` tokens), then fetches wikitext for
+        all pages via concurrent batch requests (batch size 20).
 
         Args:
             category (Optional[str]): Category name to query. Falls back
                 to :attr:`category_name` when ``None``.
-            limit (int): Maximum number of category members to retrieve
-                from the API (default ``250``).
+            limit (int): Members per categorymembers API request. Capped at
+                ``500`` by the MediaWiki API (default ``500``).
 
         Returns:
             List[Dict]: List of dicts with keys:
@@ -67,29 +117,17 @@ class WikiAPI:
         """
         # Use provided category or fall back to instance default
         category_to_use = category or self.category_name
-        
+
         # Longer timeout and connection pooling
         timeout = aiohttp.ClientTimeout(total=60, connect=10)
         connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-        
+
         async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             try:
                 step_start = time.time()
-                
-                # Get category members
-                params = {
-                    "action": "query",
-                    "format": "json",
-                    "list": "categorymembers",
-                    "cmtitle": f"Category:{category_to_use}",
-                    "cmlimit": str(limit)
-                }
-                
-                async with session.get(self.API_URL, params=params) as response:
-                    response.raise_for_status()
-                    data = await response.json()
-                    members = data.get("query", {}).get("categorymembers", [])
-                
+
+                members = await self._fetch_all_category_members(session, category_to_use, limit)
+
                 step_end = time.time()
                 print(f"[FETCH] Got {len(members)} category members from '{category_to_use}' in {round(step_end - step_start, 2)}s")
                 
@@ -520,17 +558,11 @@ class WikiAPI:
         #! Error here but the code still works
         return current_events # type: ignore
 
-# Modularized functions to use in main
-
-#* There are different functions for each game as the API call is different for each game.
-#* Notice how WuWa has the Category "events" while ZZZ has Category "In-Game_Events"
-
 async def get_ongoing_events_async(API_URL: str, debug: bool = False, category: str = "Events") -> List[Dict]:
     """Convenience wrapper that creates a :class:`WikiAPI` and fetches ongoing events.
 
-    Prefer the game-specific helpers (:func:`get_wuwa_events_async`,
-    :func:`get_zzz_events_async`) for typical usage; use this function
-    when targeting an arbitrary wiki or category.
+    Use this function when targeting an arbitrary wiki or category.
+    For game-specific helpers, see the ``games/`` package.
 
     Args:
         API_URL (str): Full ``api.php`` URL of the target wiki.
@@ -544,36 +576,3 @@ async def get_ongoing_events_async(API_URL: str, debug: bool = False, category: 
     """
     wiki = WikiAPI(API_URL, category)
     return await wiki.get_ongoing_events_async(debug=debug)
-
-# Function to get the events for the game wuthering waves
-async def get_wuwa_events_async(debug: bool = False) -> List[Dict]:
-    """Fetch currently ongoing events for Wuthering Waves.
-
-    Targets the Wuthering Waves Fandom wiki (``"Events"`` category).
-
-    Args:
-        debug (bool): When ``True``, prints timing and parsing details
-            to stdout (default ``False``).
-
-    Returns:
-        List[Dict]: Ongoing event dicts sorted by end date.
-    """
-    API_URL_WUWA = "https://wutheringwaves.fandom.com/api.php"
-    return await get_ongoing_events_async(API_URL_WUWA, debug=debug, category="Events")
-
-# Function to get the events for the game Zenless Zone Zero
-async def get_zzz_events_async(debug: bool = False) -> List[Dict]:
-    """Fetch currently ongoing events for Zenless Zone Zero.
-
-    Targets the Zenless Zone Zero Fandom wiki (``"In-Game_Events"``
-    category), which uses a different category name than Wuthering Waves.
-
-    Args:
-        debug (bool): When ``True``, prints timing and parsing details
-            to stdout (default ``False``).
-
-    Returns:
-        List[Dict]: Ongoing event dicts sorted by end date.
-    """
-    API_URL_ZZZ = "https://zenless-zone-zero.fandom.com/api.php"
-    return await get_ongoing_events_async(API_URL_ZZZ, debug=debug, category="In-Game_Events")
