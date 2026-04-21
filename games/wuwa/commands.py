@@ -35,7 +35,7 @@ def register_wuwa_commands(client) -> None:
     async def events_wuwa(interaction: discord.Interaction) -> None:
         try:
             await interaction.response.defer()
-            events = await get_wuwa_events_async(debug=True)
+            events = await get_wuwa_events_async(debug=False)
             if not events:
                 await interaction.followup.send("No ongoing events right now.")
                 return
@@ -50,6 +50,8 @@ def register_wuwa_commands(client) -> None:
         description="Get Wuthering Waves events with detailed timing stats",
         guild=GUILD_OBJECT,
     )
+    
+    # Extra command for metrics
     async def events_timed(interaction: discord.Interaction) -> None:
         overall_start = time.time()
         try:

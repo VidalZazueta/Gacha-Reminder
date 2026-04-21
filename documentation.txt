@@ -89,37 +89,113 @@ asyncio.gather, keeping total fetch time low even for large categories.
 
 wiki_api Architecture
 ---------------------
-get_ongoing_events_async(API_URL, category)       <- entry point (called by games/*/api.py)
+Call hierarchy:
+
+get_ongoing_events_async(API_URL, category)       <- module-level entry point (games/*/api.py)
 │
 └── WikiAPI(API_URL, category)
-    └── wiki.get_ongoing_events_async()
+    └── WikiAPI.get_ongoing_events_async(today, debug)
         │
-        ├── get_category_members_async()           <- step 1: discover all event pages
-        │   └── _fetch_all_category_members()      <- paginates cmcontinue until done
-        │       └── session.get(api.php)           <- HTTP: categorymembers query
-        │                                             repeats until no continuation token
-        │   then for every batch of 20 pages:
-        │   └── _fetch_batch_content()             <- concurrent via asyncio.gather
-        │       └── session.get(api.php)           <- HTTP: revisions query (20 titles at once)
+        ├── [PHASE 1] get_category_members_async(category, limit=500)
+        │   │   Opens one aiohttp session with timeout=60s, limit=10 connections.
+        │   │
+        │   ├── _fetch_all_category_members(session, category, limit=500)
+        │   │       Sends categorymembers queries, following cmcontinue tokens
+        │   │       until the API returns no continuation. Each call requests up
+        │   │       to 500 members (MediaWiki maximum). Returns list of title dicts.
+        │   │       └── session.get(api.php?action=query&list=categorymembers...)
+        │   │             repeats N times until no cmcontinue token in response.
+        │   │
+        │   └── _fetch_batch_content(session, batch)  x ceil(N/20) batches
+        │           All batch tasks are created first, then fired concurrently
+        │           via asyncio.gather. Each batch joins up to 20 titles with "|"
+        │           into a single multi-title revisions query.
+        │           Returns list of {title, content} dicts for the batch.
+        │           └── session.get(api.php?action=query&prop=revisions&titles=A|B|C...)
+        │                 one HTTP call per batch of 20 pages.
         │
-        └── process_event_async()  x all pages     <- step 2: concurrent via asyncio.gather
-            ├── parse_event_dates()
-            │   └── parse_datetime_from_wiki_format()   <- called up to 2x (start + end)
-            ├── get_clean_event_name()
-            └── get_time_remaining()
+        └── [PHASE 2] process_event_async(event_data, today, debug)  x all pages
+                All page tasks fired concurrently via asyncio.gather.
+                │
+                ├── parse_event_dates(text, title)
+                │     Extracts | time_start =, | time_end =, | time_start_offset =
+                │     via regex. Applies -8h shift if GMT+8/UTC+8 offset found.
+                │     Missing time_end → sentinel datetime(2030, 12, 31).
+                │     Returns (start_datetime, end_datetime) or None.
+                │     │
+                │     └── parse_datetime_from_wiki_format(date_str)   called 1-2x
+                │           Tries 8 format strings in order (most → least specific).
+                │           Returns naive datetime or None on failure.
+                │
+                ├── get_clean_event_name(content, title)
+                │     Reads | name = from wikitext. Falls back to page title
+                │     with trailing date suffixes stripped (/YYYY-MM-DD).
+                │
+                └── get_time_remaining(end_date)
+                      Year 2030 → "Permanent". Past end → "Ended".
+                      Otherwise → "Xd Yh", "Xh Ym", or "Xm".
 
-        then: filter None + exceptions, sort by end_date   <- step 3
+        [PHASE 3] filter + sort
+            Results from asyncio.gather include None (not ongoing or no dates)
+            and possibly Exception objects (caught per-task). Both are filtered
+            out. Survivors are sorted by end_date ascending; permanent events
+            (year == 2030) sort last using datetime.max as the sort key.
 
 Three distinct phases:
-  1. Discover  — _fetch_all_category_members walks pagination to get every page
-                 title in the category. May make multiple HTTP calls if large.
-  2. Fetch     — pages are grouped into batches of 20 and all batches fire
-                 concurrently. One HTTP call per batch (MediaWiki supports
-                 multi-title queries), so 100 pages = 5 concurrent requests.
-  3. Process   — every page runs through process_event_async concurrently.
-                 Each call parses dates, checks if the event is active, and
-                 returns a display dict or None. Nones are filtered out and
-                 survivors are sorted by end date.
+  1. Discover  — _fetch_all_category_members walks cmcontinue pagination to
+                 collect every page title in the category. For most game wikis
+                 this is a single request; large categories may require multiple.
+
+  2. Fetch     — titles are grouped into batches of 20. All batch tasks are
+                 created upfront then fired in one asyncio.gather call. MediaWiki
+                 supports multi-title revisions queries, so 100 pages = 5 HTTP
+                 requests all in flight at the same time.
+
+  3. Process   — every page runs through process_event_async concurrently via
+                 asyncio.gather. Each call parses dates, checks start <= today
+                 <= end, and returns a display dict or None. Exceptions per task
+                 are caught by return_exceptions=True and filtered out. Survivors
+                 sort by end_date.
+
+Concurrency settings (get_category_members_async):
+  aiohttp.ClientTimeout   total=60s, connect=10s
+  aiohttp.TCPConnector    limit=10 total connections, limit_per_host=5
+  Batch size              20 pages per revisions query
+
+Debug output (printed to stdout when debug=True):
+  [START]   reference date being used
+  [FETCH]   page N: member count and running total per pagination call
+  [FETCH]   total members fetched and elapsed time for phase 1
+  [FETCH]   number of batch tasks created
+  [FETCH]   elapsed time for all concurrent batches (phase 2)
+  [FETCH]   total results with content
+  [PROCESS] per-page: "no content", "no valid dates", or "found ongoing event"
+  [PROCESS] elapsed time for all concurrent processing (phase 3)
+  [RESULT]  final count of ongoing events
+  [TOTAL]   full pipeline elapsed time
+  [ERROR]   batch failure or per-event processing exception
+
+Date parsing formats (parse_datetime_from_wiki_format, tried in order):
+  1. YYYY-MM-DD HH:MM:SS   "2024-11-16 10:00:00"  (ZZZ)
+  2. YYYY-MM-DD HH:MM      "2024-11-16 10:00"
+  3. YYYY/MM/DD HH:MM:SS   slash variant with seconds
+  4. YYYY/MM/DD HH:MM      slash variant
+  5. YYYY-MM-DD            date only
+  6. YYYY/MM/DD            date only, slash
+  7. Month DD, YYYY        "November 16, 2024"
+  8. Mon DD, YYYY          "Nov 16, 2024"
+  Unrecognized strings print [DEBUG] and return None.
+
+Timezone handling:
+  All parsed datetimes are naive (no tzinfo). If | time_start_offset = contains
+  "GMT+8" or "UTC+8", both start and end dates are shifted back 8 hours to
+  approximate UTC. Other offsets are not currently handled. Pages without an
+  offset field are assumed to already be in the correct timezone.
+
+Sentinel value:
+  datetime(2030, 12, 31) is used as end_date for permanent/no-end-date events.
+  get_time_remaining() returns "Permanent" for any end_date with year == 2030.
+  The sort key uses datetime.max for these so they appear last in the embed.
 
 
 MODULES

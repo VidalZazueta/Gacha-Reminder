@@ -19,15 +19,18 @@ import discord
 
 from config import GUILD_OBJECT
 from embeds import send_error
-from games import get_wuwa_events_async, get_zzz_events_async, GAME_CONFIG
-from games.wuwa.commands import register_wuwa_commands
-from games.zzz.commands import register_zzz_commands
+from games import  GAME_CONFIG
+from games.wuwa.commands import register_wuwa_commands, get_wuwa_events_async
+from games.zzz.commands import get_zzz_events_async, register_zzz_commands
+from games.genshinimpact.commands import register_genshinimpact_commands, get_genshinimpact_events_async
 
 
 
 def register_game_commands(client) -> None:
     register_wuwa_commands(client)
     register_zzz_commands(client)
+    register_genshinimpact_commands(client)
+    
 
     @client.tree.command(
         name="events_all",
@@ -38,9 +41,11 @@ def register_game_commands(client) -> None:
         try:
             await interaction.response.defer()
 
-            wuwa_events, zzz_events = await asyncio.gather(
+            wuwa_events, zzz_events, genshinimpact_events = await asyncio.gather(
                 get_wuwa_events_async(debug=False),
                 get_zzz_events_async(debug=False),
+                get_genshinimpact_events_async(debug=False)
+                
             )
 
             embed = discord.Embed(
@@ -49,7 +54,7 @@ def register_game_commands(client) -> None:
             )
 
             sections = []
-            for game_key, events in (("wuwa", wuwa_events), ("zzz", zzz_events)):
+            for game_key, events in (("wuwa", wuwa_events), ("zzz", zzz_events), ("genshinimpact", genshinimpact_events)):
                 cfg = GAME_CONFIG[game_key]
                 if events:
                     lines = [f"**{e['title']}** - {e['time_remaining']}" for e in events]

@@ -33,7 +33,7 @@ def register_zzz_commands(client) -> None:
     async def events_zzz(interaction: discord.Interaction) -> None:
         try:
             await interaction.response.defer()
-            events = await get_zzz_events_async(debug=True)
+            events = await get_zzz_events_async(debug=False)
             if not events:
                 await interaction.followup.send("No ongoing events right now.")
                 return
