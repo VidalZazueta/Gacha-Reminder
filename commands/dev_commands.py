@@ -24,8 +24,8 @@ import discord
 from config import GUILD_OBJECT
 from embeds import build_error_embed
 from games import GAME_CONFIG
-from games.wuwa.commands import register_wuwa_dev_commands
-from games.zzz.commands import register_zzz_dev_commands
+from games.wuwa.dev_commands import register_wuwa_dev_commands
+from games.zzz.dev_commands import register_zzz_dev_commands
 
 
 def register_dev_commands(client) -> None:
