@@ -87,6 +87,41 @@ Category members are fetched in parallel batches of 20 pages each using
 asyncio.gather, keeping total fetch time low even for large categories.
 
 
+wiki_api Architecture
+---------------------
+get_ongoing_events_async(API_URL, category)       <- entry point (called by games/*/api.py)
+│
+└── WikiAPI(API_URL, category)
+    └── wiki.get_ongoing_events_async()
+        │
+        ├── get_category_members_async()           <- step 1: discover all event pages
+        │   └── _fetch_all_category_members()      <- paginates cmcontinue until done
+        │       └── session.get(api.php)           <- HTTP: categorymembers query
+        │                                             repeats until no continuation token
+        │   then for every batch of 20 pages:
+        │   └── _fetch_batch_content()             <- concurrent via asyncio.gather
+        │       └── session.get(api.php)           <- HTTP: revisions query (20 titles at once)
+        │
+        └── process_event_async()  x all pages     <- step 2: concurrent via asyncio.gather
+            ├── parse_event_dates()
+            │   └── parse_datetime_from_wiki_format()   <- called up to 2x (start + end)
+            ├── get_clean_event_name()
+            └── get_time_remaining()
+
+        then: filter None + exceptions, sort by end_date   <- step 3
+
+Three distinct phases:
+  1. Discover  — _fetch_all_category_members walks pagination to get every page
+                 title in the category. May make multiple HTTP calls if large.
+  2. Fetch     — pages are grouped into batches of 20 and all batches fire
+                 concurrently. One HTTP call per batch (MediaWiki supports
+                 multi-title queries), so 100 pages = 5 concurrent requests.
+  3. Process   — every page runs through process_event_async concurrently.
+                 Each call parses dates, checks if the event is active, and
+                 returns a display dict or None. Nones are filtered out and
+                 survivors are sorted by end date.
+
+
 MODULES
 -------
 
@@ -373,6 +408,9 @@ DEPENDENCIES (requirements.txt)
   aiohttp        Async HTTP client for MediaWiki API requests.
   python-dotenv  Loads .env file into os.environ.
 
+DISCORD API DOCUMENTATION
+-------------------------
+https://discordpy.readthedocs.io/en/latest/api.html#
 
 NOTES
 -----

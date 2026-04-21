@@ -24,6 +24,7 @@ from games.wuwa.commands import register_wuwa_commands
 from games.zzz.commands import register_zzz_commands
 
 
+
 def register_game_commands(client) -> None:
     register_wuwa_commands(client)
     register_zzz_commands(client)
