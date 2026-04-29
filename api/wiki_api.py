@@ -6,11 +6,6 @@ MediaWiki-based wiki using the MediaWiki Action API, plus parsing
 utilities for extracting and normalizing event start/end dates from
 wikitext templates.
 
-Module-level convenience functions wrap :class:`WikiAPI` for the two
-supported games:
-
-* :func:`get_wuwa_events_async` – Wuthering Waves
-* :func:`get_zzz_events_async`  – Zenless Zone Zero
 """
 import re
 import asyncio

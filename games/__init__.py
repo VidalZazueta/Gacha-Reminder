@@ -9,4 +9,9 @@ GAME_CONFIG = {
     "genshinimpact": GENSHINIMPACT_CONFIG,
 }
 
-__all__ = [ "GAME_CONFIG", "get_wuwa_events_async", "WUWA_CONFIG", "get_zzz_events_async", "ZZZ_CONFIG", "get_genshinimpact_events_async", "GENSHINIMPACT_CONFIG"]
+__all__ = [ 
+           "GAME_CONFIG", 
+           "get_wuwa_events_async", "WUWA_CONFIG", 
+           "get_zzz_events_async", "ZZZ_CONFIG", 
+           "get_genshinimpact_events_async", "GENSHINIMPACT_CONFIG"
+           ]
